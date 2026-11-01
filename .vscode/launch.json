@@ -4,9 +4,9 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug POS Desktop (UI)",
+      "name": "Debug POS Desktop",
       "cargo": {
-        "args": ["build", "--bin", "posdesktop-ui", "-p", "posdesktop-ui-app"]
+        "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
       },
       "args": [],
       "cwd": "${workspaceFolder}",
@@ -19,7 +19,7 @@
       "request": "launch",
       "name": "Debug POS Desktop (overlay)",
       "cargo": {
-        "args": ["build", "--bin", "posdesktop-ui", "-p", "posdesktop-ui-app"]
+        "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
       },
       "args": ["--overlay"],
       "cwd": "${workspaceFolder}",
@@ -34,7 +34,7 @@
       "cargo": {
         "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
       },
-      "args": ["--help"],
+      "args": ["--demo"],
       "cwd": "${workspaceFolder}"
     },
     {

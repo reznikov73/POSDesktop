@@ -15,8 +15,7 @@ crates/shell          логика триггеров у краёв экрана
 crates/ai             реестр инструментов ИИ и политика подтверждений
 crates/integrations   источники данных (почта)
 crates/ui             UI-слой на Slint
-crates/app            CLI-бинарник posdesktop
-apps/ui               бинарник posdesktop-ui (окно)
+crates/app            бинарник posdesktop: окно + CLI
 apps/d0-spike         замер триггеров на реальном экране
 ui/app.slint          экраны интерфейса
 ```
@@ -24,15 +23,18 @@ ui/app.slint          экраны интерфейса
 ## Запуск
 
 ```powershell
-cargo run -p posdesktop-ui-app                    # окно панели
-cargo run -p posdesktop-ui-app -- --overlay       # оверлей: поверх всех, без фокуса
-cargo run -p posdesktop -- --demo                 # CLI: модели данных
-cargo run -p posdesktop-d0-spike                  # триггеры краёв экрана
+cargo run -p posdesktop                  # окно приложения
+cargo run -p posdesktop -- --overlay     # оверлей: поверх всех, без фокуса
+cargo run -p posdesktop -- --demo        # CLI: модели данных
+cargo run -p posdesktop-d0-spike         # триггеры краёв экрана
 ```
 
-В VS Code: `F5` → «Debug POS Desktop (UI)» или «Debug POS Desktop (overlay)».
+В VS Code: `F5` → «Debug POS Desktop» или «Debug POS Desktop (overlay)».
 Оверлейное окно не берёт фокус, поэтому `Alt+F4` его не закрывает —
 останавливайте через Stop в отладчике или `Ctrl+C` в терминале.
+
+Логи: `%APPDATA%\POSDesktop\logs\app.log` (ротация 5 МБ × 5).
+Уровень: `$env:POSDESKTOP_LOG = 'debug'` перед запуском.
 
 ## Сборка
 

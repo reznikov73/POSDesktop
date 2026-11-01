@@ -1,6 +1,7 @@
-//! Ядро POS Desktop: модель раскладки и её валидация.
+//! Ядро POS Desktop: модель раскладки, валидация, логирование.
 
 pub mod layout;
+pub mod logging;
 
 pub use layout::{
     Density, Edge, Group, Layout, LayoutError, Object, ObjectKind, Panel, PanelMode, PanelType,

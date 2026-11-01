@@ -3436,21 +3436,25 @@ dependencies = [
 
 [[package]]
 name = "posdesktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
+ "log",
  "posdesktop-ai",
  "posdesktop-core",
  "posdesktop-integrations",
+ "posdesktop-ui",
 ]
 
 [[package]]
 name = "posdesktop-ai"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "posdesktop-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
+ "chrono",
+ "log",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -3458,37 +3462,30 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-d0-spike"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "posdesktop-shell",
 ]
 
 [[package]]
 name = "posdesktop-integrations"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "posdesktop-shell"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "posdesktop-core",
 ]
 
 [[package]]
 name = "posdesktop-ui"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
+ "log",
  "raw-window-handle",
  "slint",
  "slint-build",
-]
-
-[[package]]
-name = "posdesktop-ui-app"
-version = "0.1.1"
-dependencies = [
- "posdesktop-ui",
- "slint",
 ]
 
 [[package]]

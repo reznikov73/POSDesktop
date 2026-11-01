@@ -8,6 +8,7 @@ slint::include_modules!();
 /// на панели задач, не забирает фокус. Без флага — обычное окно.
 pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
+    log::info!("окно создано");
 
     if overlay {
         let weak = window.as_weak();
@@ -29,7 +30,7 @@ fn apply_overlay_style(window: &slint::Window) {
 
     let slint_handle = window.window_handle();
     let Ok(handle) = slint_handle.window_handle() else {
-        eprintln!("overlay: окно ещё не создано, стили не применены");
+        log::warn!("overlay: окно ещё не создано, стили не применены");
         return;
     };
 
@@ -52,6 +53,7 @@ fn apply_overlay_style(window: &slint::Window) {
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
         );
+        log::info!("overlay: TOPMOST|TOOLWINDOW|NOACTIVATE применены, hwnd=0x{hwnd:x}");
     }
 }
 

@@ -13,3 +13,5 @@ path = "src/main.rs"
 posdesktop-core = { path = "../core" }
 posdesktop-ai = { path = "../ai" }
 posdesktop-integrations = { path = "../integrations" }
+posdesktop-ui = { path = "../ui" }
+log.workspace = true
