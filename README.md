@@ -14,8 +14,11 @@ crates/core           модель раскладки, валидация
 crates/shell          логика триггеров у краёв экрана
 crates/ai             реестр инструментов ИИ и политика подтверждений
 crates/integrations   источники данных (почта)
+crates/ui             UI-слой на Slint
 crates/app            CLI-бинарник posdesktop
+apps/ui               бинарник posdesktop-ui (окно)
 apps/d0-spike         замер триггеров на реальном экране
+ui/app.slint          экраны интерфейса
 ```
 
 ## Сборка
@@ -23,9 +26,12 @@ apps/d0-spike         замер триггеров на реальном экр
 ```powershell
 cargo test --workspace
 cargo build --release -p posdesktop
+cargo build --release -p posdesktop-ui-app
 .\scripts\build.ps1          # fmt + clippy + tests + release + dist
 .\scripts\release.ps1        # + версия, MSI, коммит, push
 ```
+
+Замеры D0 (память, CPU, размер): [docs/D0-measurements.md](docs/D0-measurements.md).
 
 ## Лицензия
 

@@ -1,0 +1,66 @@
+export struct AppItem {
+    name: string,
+    category: string,
+}
+
+export component AppWindow inherits Window {
+    title: "POS Desktop";
+    width: 380px;
+    height: 720px;
+    background: #101113;
+
+    in property <[AppItem]> apps: [
+        { name: "1С:Предприятие", category: "Офис" },
+        { name: "Word", category: "Офис" },
+        { name: "Excel", category: "Офис" },
+        { name: "PowerPoint", category: "Офис" },
+        { name: "Outlook", category: "Офис" },
+        { name: "VS Code", category: "Разработка" },
+        { name: "Терминал", category: "Разработка" },
+        { name: "Git Bash", category: "Разработка" },
+        { name: "Telegram", category: "Интернет" },
+        { name: "WhatsApp", category: "Интернет" },
+        { name: "Zoom", category: "Интернет" },
+    ];
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 6px;
+
+        Text {
+            text: "ПРИЛОЖЕНИЯ";
+            color: #83848a;
+            font-size: 11px;
+            height: 20px;
+        }
+
+        for app in apps : Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: #16181b;
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+
+                Text {
+                    text: app.name;
+                    color: #f7f8f8;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: app.category;
+                    color: #6a6b6c;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        Rectangle { }
+    }
+}

@@ -6,6 +6,8 @@ members = [
     "crates/ai",
     "crates/integrations",
     "crates/app",
+    "crates/ui",
+    "apps/ui",
     "apps/d0-spike",
 ]
 
