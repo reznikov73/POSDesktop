@@ -40,6 +40,10 @@ fn main() {
             .map_err(|err| format!("clickthrough-тест не удался: {err}")),
         Some("--workspace-snapshot") => posdesktop_ui::run_workspace_snapshot()
             .map_err(|err| format!("workspace-снапшот не удался: {err}")),
+        Some("--logs") => {
+            open_logs(&log_path);
+            Ok(())
+        }
         Some("-h") | Some("--help") => {
             help();
             Ok(())
@@ -98,13 +102,30 @@ fn help() {
     println!("    posdesktop [OPTION]");
     println!();
     println!("OPTIONS:");
-    println!("        --overlay   окно-оверлей: поверх всех, без фокуса");
-    println!("        --snapshot  снять снапшот окна и вывести статистику цвета");
-    println!("    -V, --version   версия");
-    println!("        --layout    раскладка по умолчанию в JSON");
-    println!("        --check     проверить раскладку");
-    println!("        --demo      демонстрация моделей (почта, инструменты)");
-    println!("    -h, --help      эта справка");
+    println!("        --overlay            окно-оверлей: поверх всех, без фокуса");
+    println!("        --snapshot           снапшот панели и статистика цвета");
+    println!("        --workspace-snapshot снапшот рабочей области (прозрачность)");
+    println!("        --clickthrough-test  проверить клик-сквозь");
+    println!("        --logs               показать путь к логам и открыть папку");
+    println!("    -V, --version            версия");
+    println!("        --layout             раскладка по умолчанию в JSON");
+    println!("        --check              проверить раскладку");
+    println!("        --demo               демонстрация моделей (почта, инструменты)");
+    println!("    -h, --help               эта справка");
+}
+
+fn open_logs(log_path: &Path) {
+    println!("{}", log_path.display());
+    if let Some(dir) = log_path.parent() {
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("explorer").arg(dir).spawn();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = dir;
+        }
+    }
 }
 
 #[cfg(windows)]
