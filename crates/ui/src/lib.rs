@@ -3,7 +3,7 @@
 use posdesktop_core::{Edge, Layout};
 use posdesktop_shell::{edge_at, win32, ScreenRect, TriggerConfig};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 slint::include_modules!();
@@ -103,7 +103,9 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         }
     }
 
-    spawn_trigger_worker(apps.as_weak(), screen);
+    let panel_state = Arc::new(PanelState::new());
+    spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
+    spawn_hotkey_worker(apps.as_weak(), panel_state);
 
     slint::run_event_loop()?;
     log::info!("цикл событий завершён");
@@ -252,10 +254,43 @@ pub fn run_clickthrough_test() -> Result<(), slint::PlatformError> {
     Ok(())
 }
 
-fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect) {
+/// Состояние панели, общее для триггера и хоткея.
+struct PanelState {
+    open: AtomicBool,
+    /// Панель открыта с клавиатуры — триггер её не закрывает.
+    sticky: AtomicBool,
+}
+
+impl PanelState {
+    fn new() -> Self {
+        Self {
+            open: AtomicBool::new(false),
+            sticky: AtomicBool::new(false),
+        }
+    }
+}
+
+fn open_panel(weak: &slint::Weak<AppWindow>, state: &PanelState, reason: &str, sticky: bool) {
+    if state.open.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    state.sticky.store(sticky, Ordering::SeqCst);
+    log::info!("панель открывается ({reason})");
+    animate(weak, -PANEL_WIDTH, 0);
+}
+
+fn close_panel(weak: &slint::Weak<AppWindow>, state: &PanelState, reason: &str) {
+    if !state.open.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    state.sticky.store(false, Ordering::SeqCst);
+    log::info!("панель закрывается ({reason})");
+    animate(weak, 0, -PANEL_WIDTH);
+}
+
+fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect, state: Arc<PanelState>) {
     std::thread::spawn(move || {
         let config = TriggerConfig::default();
-        let mut open = false;
         let mut leave_since: Option<Instant> = None;
         log::info!(
             "триггер запущен: зона {}px, углы {}px",
@@ -269,21 +304,22 @@ fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect) {
                 continue;
             };
 
-            if !open {
+            if !state.open.load(Ordering::SeqCst) {
                 if edge_at((x, y), screen, &config) == Some(Edge::Left) {
-                    open = true;
                     leave_since = None;
-                    log::info!("панель открывается, курсор ({x}, {y})");
-                    animate(&weak, -PANEL_WIDTH, 0);
+                    open_panel(
+                        &weak,
+                        &state,
+                        &format!("край экрана, курсор ({x}, {y})"),
+                        false,
+                    );
                 }
-            } else if x > PANEL_WIDTH + 24 {
+            } else if !state.sticky.load(Ordering::SeqCst) && x > PANEL_WIDTH + 24 {
                 let now = Instant::now();
                 let since = *leave_since.get_or_insert(now);
                 if now.duration_since(since) >= Duration::from_millis(CLOSE_DELAY_MS) {
-                    open = false;
                     leave_since = None;
-                    log::info!("панель закрывается, курсор ({x}, {y})");
-                    animate(&weak, 0, -PANEL_WIDTH);
+                    close_panel(&weak, &state, &format!("курсор ({x}, {y})"));
                 }
             } else {
                 leave_since = None;
@@ -293,6 +329,56 @@ fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect) {
         }
     });
 }
+
+/// Глобальный хоткей Ctrl+Alt+1 — открыть/закрыть панель приложений.
+#[cfg(windows)]
+fn spawn_hotkey_worker(weak: slint::Weak<AppWindow>, state: Arc<PanelState>) {
+    std::thread::spawn(move || {
+        const MOD_ALT: u32 = 0x0001;
+        const MOD_CONTROL: u32 = 0x0002;
+        const MOD_SHIFT: u32 = 0x0004;
+        const MOD_NOREPEAT: u32 = 0x4000;
+        const VK_1: u32 = 0x31;
+
+        let base = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
+        let mut label = "Ctrl+Alt+1";
+        let mut registered = unsafe { RegisterHotKey(0, HOTKEY_PANEL, base, VK_1) };
+
+        if registered == 0 {
+            let code = unsafe { GetLastError() };
+            log::warn!("Ctrl+Alt+1 занят (код {code}), пробую Ctrl+Alt+Shift+1");
+            registered = unsafe { RegisterHotKey(0, HOTKEY_PANEL, base | MOD_SHIFT, VK_1) };
+            if registered != 0 {
+                label = "Ctrl+Alt+Shift+1";
+            } else {
+                let code = unsafe { GetLastError() };
+                log::warn!("Ctrl+Alt+Shift+1 тоже занят (код {code}); хоткей отключён");
+                return;
+            }
+        }
+
+        log::info!("хоткей {label} зарегистрирован");
+
+        loop {
+            let mut buffer = [0u8; 64];
+            let result =
+                unsafe { GetMessageW(buffer.as_mut_ptr() as *mut std::ffi::c_void, 0, 0, 0) };
+            if result <= 0 {
+                break;
+            }
+            if state.open.load(Ordering::SeqCst) {
+                close_panel(&weak, &state, &format!("хоткей {label}"));
+            } else {
+                open_panel(&weak, &state, &format!("хоткей {label}"), true);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn spawn_hotkey_worker(_weak: slint::Weak<AppWindow>, _state: Arc<PanelState>) {}
+
+const HOTKEY_PANEL: i32 = 1;
 
 fn animate(weak: &slint::Weak<AppWindow>, from: i32, to: i32) {
     let steps = (SLIDE_MS / FRAME_MS).max(1) as i32;
@@ -496,6 +582,13 @@ extern "system" {
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
     fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
+    fn RegisterHotKey(hwnd: isize, id: i32, modifiers: u32, vk: u32) -> i32;
+    fn GetMessageW(
+        msg: *mut std::ffi::c_void,
+        hwnd: isize,
+        filter_min: u32,
+        filter_max: u32,
+    ) -> i32;
     fn SetWindowPos(
         hwnd: isize,
         insert_after: isize,
@@ -505,6 +598,12 @@ extern "system" {
         cy: i32,
         flags: u32,
     ) -> i32;
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetLastError() -> u32;
 }
 
 #[cfg(windows)]
