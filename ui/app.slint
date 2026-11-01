@@ -7,6 +7,46 @@ export struct AppGroup {
     apps: [AppItem],
 }
 
+export struct Tile {
+    x: length,
+    y: length,
+    w: length,
+    h: length,
+    label: string,
+}
+
+export component WorkspaceWindow inherits Window {
+    title: "POS Desktop — рабочая область";
+    no-frame: true;
+    width: ws-width;
+    height: ws-height;
+    background: transparent;
+    default-font-family: "Segoe UI";
+
+    in property <length> ws-width: 1920px;
+    in property <length> ws-height: 1080px;
+    in property <[Tile]> tiles: [];
+
+    for tile in tiles : Rectangle {
+        x: tile.x;
+        y: tile.y;
+        width: tile.w;
+        height: tile.h;
+        border-radius: 12px;
+        background: #fbfcfc;
+        border-width: 1px;
+        border-color: #dfe3e5;
+
+        Text {
+            text: tile.label;
+            color: #17181a;
+            font-size: 13px;
+            x: 12px;
+            y: 12px;
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "POS Desktop";
     no-frame: true;

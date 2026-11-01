@@ -1,7 +1,9 @@
 //! UI-слой POS Desktop на Slint: панель приложений, статус-бар, сервисы.
 
-use posdesktop_core::Edge;
+use posdesktop_core::{Edge, Layout};
 use posdesktop_shell::{edge_at, win32, ScreenRect, TriggerConfig};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 slint::include_modules!();
@@ -38,6 +40,56 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     services
         .window()
         .set_position(slint::PhysicalPosition::new(0, screen.h - SERVICES_HEIGHT));
+
+    let layout_path = posdesktop_core::default_layout_path();
+    let existed = layout_path.exists();
+    let layout = posdesktop_core::load_or_default(&layout_path);
+    if !existed {
+        match posdesktop_core::save(&layout_path, &layout) {
+            Ok(()) => log::info!("layout.json создан: {}", layout_path.display()),
+            Err(err) => log::warn!("не удалось сохранить layout.json: {err}"),
+        }
+    }
+    let tiles: Vec<Tile> = tiles_model(&layout);
+    let rects: Vec<(i32, i32, i32, i32)> = tiles
+        .iter()
+        .map(|tile| (tile.x as i32, tile.y as i32, tile.w as i32, tile.h as i32))
+        .collect();
+
+    let workspace = WorkspaceWindow::new()?;
+    // Окно покрывает только габариты плиток: полноэкранная прозрачная
+    // поверхность стоит лишних 15–20 МБ памяти.
+    let mut width = 320i32;
+    let mut height = 240i32;
+    for (x, y, w, h) in &rects {
+        width = width.max(x + w + 16);
+        height = height.max(y + h + 16);
+    }
+    workspace.set_ws_width(width as f32);
+    workspace.set_ws_height(height as f32);
+    workspace.set_tiles(slint::ModelRc::from(std::rc::Rc::new(
+        slint::VecModel::from(tiles.clone()),
+    )));
+
+    workspace.show()?;
+    workspace
+        .window()
+        .set_position(slint::PhysicalPosition::new(0, 0));
+
+    // HWND появляется только после первого прохода цикла событий.
+    let workspace_weak = workspace.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(350), move || {
+        if let Some(component) = workspace_weak.upgrade() {
+            if let Some(hwnd) = hwnd_of(component.window()) {
+                apply_tool_style(hwnd);
+                send_to_bottom(hwnd);
+                install_clickthrough_rects(hwnd, rects);
+                log::info!("workspace: клик-сквозь вне плиток, hwnd=0x{hwnd:x}");
+            } else {
+                log::warn!("workspace: HWND не получен");
+            }
+        }
+    });
 
     if overlay {
         for window in [apps.window(), status.window(), services.window()] {
@@ -96,6 +148,69 @@ pub fn run_snapshot() -> Result<(), slint::PlatformError> {
     window.run()
 }
 
+fn tiles_model(layout: &Layout) -> Vec<Tile> {
+    layout
+        .monitors
+        .values()
+        .flat_map(|screen| screen.objects.iter())
+        .map(|object| Tile {
+            x: object.rect.x as f32,
+            y: object.rect.y as f32,
+            w: object.rect.w as f32,
+            h: object.rect.h as f32,
+            label: object
+                .app
+                .clone()
+                .or_else(|| object.widget.clone())
+                .unwrap_or_default()
+                .into(),
+        })
+        .collect()
+}
+
+/// Снапшот рабочей области: проверяет прозрачность фона.
+pub fn run_workspace_snapshot() -> Result<(), slint::PlatformError> {
+    let screen = win32::primary_screen();
+    let layout = posdesktop_core::load_or_default(&posdesktop_core::default_layout_path());
+
+    let window = WorkspaceWindow::new()?;
+    window.set_ws_width(screen.w as f32);
+    window.set_ws_height(screen.h as f32);
+    window.set_tiles(slint::ModelRc::from(std::rc::Rc::new(
+        slint::VecModel::from(tiles_model(&layout)),
+    )));
+
+    let weak = window.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(900), move || {
+        if let Some(component) = weak.upgrade() {
+            if let Ok(buffer) = component.window().take_snapshot() {
+                let (width, height) = (buffer.width(), buffer.height());
+                let mut transparent = 0u64;
+                let mut opaque = 0u64;
+                let mut alpha_sum = 0u64;
+                for pixel in buffer.as_slice() {
+                    alpha_sum += pixel.a as u64;
+                    if pixel.a == 0 {
+                        transparent += 1;
+                    }
+                    if pixel.a == 255 {
+                        opaque += 1;
+                    }
+                }
+                let count = (width as u64 * height as u64).max(1);
+                println!(
+                    "workspace {width}x{height} transparent_px={transparent} ({:.1}%) opaque_px={opaque} avg_alpha={}",
+                    transparent as f64 / count as f64 * 100.0,
+                    alpha_sum / count
+                );
+            }
+        }
+        let _ = slint::quit_event_loop();
+    });
+
+    window.run()
+}
+
 /// Проверка клик-сквозь: нижняя половина окна прозрачна для мыши.
 pub fn run_clickthrough_test() -> Result<(), slint::PlatformError> {
     let screen = win32::primary_screen();
@@ -112,8 +227,9 @@ pub fn run_clickthrough_test() -> Result<(), slint::PlatformError> {
     slint::Timer::single_shot(Duration::from_millis(400), move || {
         if let Some(component) = weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
-                install_clickthrough(hwnd, threshold);
-                log::info!("clickthrough: hwnd=0x{hwnd:x}, pass-through ниже y={threshold}");
+                let rects = vec![(0, 0, threshold * 2, threshold)];
+                install_clickthrough_rects(hwnd, rects);
+                log::info!("clickthrough: hwnd=0x{hwnd:x}, интерактивен верх до y={threshold}");
                 println!("clickthrough hwnd=0x{hwnd:x} threshold_y={threshold}");
             } else {
                 log::warn!("clickthrough: HWND не получен");
@@ -240,17 +356,48 @@ fn apply_overlay_style(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_overlay_style(_window: &slint::Window) {}
 
-/// Подписывается на WM_NCHITTEST и отдаёт HTTRANSPARENT ниже порога.
+/// Подписывается на WM_NCHITTEST: интерактивны только указанные прямоугольники.
 #[cfg(windows)]
-fn install_clickthrough(hwnd: isize, threshold_y: i32) {
-    PASS_THROUGH_Y.store(threshold_y, std::sync::atomic::Ordering::Relaxed);
+fn install_clickthrough_rects(hwnd: isize, rects: Vec<(i32, i32, i32, i32)>) {
+    if let Ok(mut guard) = PASS_RECTS.lock() {
+        *guard = rects;
+    }
+    CLICKTHROUGH.store(true, Ordering::Relaxed);
     unsafe {
         SetWindowSubclass(hwnd, Some(subclass_proc), 1, 0);
     }
 }
 
 #[cfg(windows)]
-static PASS_THROUGH_Y: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(i32::MAX);
+static PASS_RECTS: Mutex<Vec<(i32, i32, i32, i32)>> = Mutex::new(Vec::new());
+#[cfg(windows)]
+static CLICKTHROUGH: AtomicBool = AtomicBool::new(false);
+
+/// Окно без кнопки на панели задач, не забирает фокус, без topmost.
+#[cfg(windows)]
+fn apply_tool_style(hwnd: isize) {
+    unsafe {
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let new_style = (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+    }
+}
+
+/// Опускает окно в самый низ z-порядка (desktop-слой).
+#[cfg(windows)]
+fn send_to_bottom(hwnd: isize) {
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            HWND_BOTTOM,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+}
 
 #[cfg(windows)]
 extern "system" fn subclass_proc(
@@ -263,12 +410,20 @@ extern "system" fn subclass_proc(
 ) -> isize {
     const WM_NCHITTEST: u32 = 0x0084;
     const HTTRANSPARENT: isize = -1;
+    const HTCLIENT: isize = 1;
 
-    if msg == WM_NCHITTEST {
+    if msg == WM_NCHITTEST && CLICKTHROUGH.load(Ordering::Relaxed) {
+        let x = (lparam & 0xFFFF) as u16 as i16 as i32;
         let y = ((lparam >> 16) & 0xFFFF) as u16 as i16 as i32;
-        if y > PASS_THROUGH_Y.load(std::sync::atomic::Ordering::Relaxed) {
-            return HTTRANSPARENT;
-        }
+        let inside = PASS_RECTS
+            .lock()
+            .map(|rects| {
+                rects
+                    .iter()
+                    .any(|&(rx, ry, rw, rh)| x >= rx && x < rx + rw && y >= ry && y < ry + rh)
+            })
+            .unwrap_or(false);
+        return if inside { HTCLIENT } else { HTTRANSPARENT };
     }
 
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
@@ -284,6 +439,8 @@ const WS_EX_APPWINDOW: isize = 0x0004_0000;
 const WS_EX_NOACTIVATE: isize = 0x0800_0000;
 #[cfg(windows)]
 const HWND_TOPMOST: isize = -1;
+#[cfg(windows)]
+const HWND_BOTTOM: isize = 1;
 #[cfg(windows)]
 const SWP_NOSIZE: u32 = 0x0001;
 #[cfg(windows)]

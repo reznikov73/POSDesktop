@@ -6,6 +6,12 @@ use posdesktop_integrations::{DemoMail, MailSource};
 use std::path::Path;
 
 fn main() {
+    // Программный рендер по умолчанию: 18.8 МБ против 63.5 МБ у GPU-рендера.
+    // Переопределяется переменной SLINT_BACKEND (например, winit-femtovg).
+    if std::env::var_os("SLINT_BACKEND").is_none() {
+        std::env::set_var("SLINT_BACKEND", "winit-software");
+    }
+
     let log_path = logging::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     log::info!("POS Desktop {VERSION} запуск, аргументы: {args:?}");
@@ -32,6 +38,8 @@ fn main() {
         }
         Some("--clickthrough-test") => posdesktop_ui::run_clickthrough_test()
             .map_err(|err| format!("clickthrough-тест не удался: {err}")),
+        Some("--workspace-snapshot") => posdesktop_ui::run_workspace_snapshot()
+            .map_err(|err| format!("workspace-снапшот не удался: {err}")),
         Some("-h") | Some("--help") => {
             help();
             Ok(())
