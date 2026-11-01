@@ -27,6 +27,9 @@ fn main() {
             demo();
             Ok(())
         }
+        Some("--snapshot") => {
+            posdesktop_ui::run_snapshot().map_err(|err| format!("snapshot не удался: {err}"))
+        }
         Some("-h") | Some("--help") => {
             help();
             Ok(())
@@ -86,6 +89,7 @@ fn help() {
     println!();
     println!("OPTIONS:");
     println!("        --overlay   окно-оверлей: поверх всех, без фокуса");
+    println!("        --snapshot  снять снапшот окна и вывести статистику цвета");
     println!("    -V, --version   версия");
     println!("        --layout    раскладка по умолчанию в JSON");
     println!("        --check     проверить раскладку");

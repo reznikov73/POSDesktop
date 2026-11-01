@@ -48,6 +48,9 @@ cargo build --release -p posdesktop-ui-app
 
 Замеры D0 (память, CPU, размер): [docs/D0-measurements.md](docs/D0-measurements.md).
 
+Тема по умолчанию — светлая, палитра взята из макета прототипа:
+фон `#fbfcfc`, поверхности `#f1f4f5`, текст `#17181a`, акцент `#0c7f68`.
+
 ## Лицензия
 
 MIT.

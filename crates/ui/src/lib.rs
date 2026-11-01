@@ -23,6 +23,53 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     window.run()
 }
 
+/// Открывает окно, снимает снапшот и завершает работу.
+/// Используется для проверки темы без визуального осмотра.
+pub fn run_snapshot() -> Result<(), slint::PlatformError> {
+    let window = AppWindow::new()?;
+    let weak = window.as_weak();
+
+    slint::Timer::single_shot(std::time::Duration::from_millis(700), move || {
+        if let Some(component) = weak.upgrade() {
+            match component.window().take_snapshot() {
+                Ok(buffer) => {
+                    let (width, height) = (buffer.width(), buffer.height());
+                    let (mut red, mut green, mut blue) = (0u64, 0u64, 0u64);
+                    let mut dark = 0u64;
+                    let mut content = 0u64;
+                    for pixel in buffer.as_slice() {
+                        red += pixel.r as u64;
+                        green += pixel.g as u64;
+                        blue += pixel.b as u64;
+                        if pixel.r < 100 && pixel.g < 100 && pixel.b < 100 {
+                            dark += 1;
+                        }
+                        // Пиксели, отличные от фона #fbfcfc.
+                        if pixel.r.abs_diff(251) > 4
+                            || pixel.g.abs_diff(252) > 4
+                            || pixel.b.abs_diff(252) > 4
+                        {
+                            content += 1;
+                        }
+                    }
+                    let count = (width as u64 * height as u64).max(1);
+                    println!(
+                        "snapshot {width}x{height} avg=({},{},{}) dark_pixels={dark} content_pixels={content} ({:.1}%)",
+                        red / count,
+                        green / count,
+                        blue / count,
+                        content as f64 / count as f64 * 100.0
+                    );
+                }
+                Err(err) => eprintln!("snapshot error: {err}"),
+            }
+        }
+        let _ = slint::quit_event_loop();
+    });
+
+    window.run()
+}
+
 /// Превращает окно в оверлей.
 #[cfg(windows)]
 fn apply_overlay_style(window: &slint::Window) {
