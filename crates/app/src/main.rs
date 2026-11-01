@@ -72,6 +72,10 @@ fn layout_check() -> Result<(), String> {
 }
 
 fn run_ui(overlay: bool) -> Result<(), String> {
+    if !claim_single_instance() {
+        log::info!("оболочка уже запущена — попросил её показать панель");
+        return Ok(());
+    }
     log::info!("открываю окно (overlay={overlay})");
     hide_console();
     posdesktop_ui::run(overlay).map_err(|err| format!("не удалось открыть окно: {err}"))
@@ -127,6 +131,56 @@ fn open_logs(log_path: &Path) {
             let _ = dir;
         }
     }
+}
+
+/// Захватывает единственный экземпляр оболочки.
+///
+/// Повторный запуск не создаёт второе окно, а просит работающую оболочку
+/// показать панель. Мьютекс живёт до конца процесса.
+#[cfg(windows)]
+fn claim_single_instance() -> bool {
+    use std::ffi::c_void;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateMutexW(attributes: *const c_void, owner: i32, name: *const u16) -> isize;
+        fn GetLastError() -> u32;
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn RegisterWindowMessageW(name: *const u16) -> u32;
+        fn PostMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> i32;
+    }
+
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    const HWND_BROADCAST: isize = 0xFFFF;
+
+    let name: Vec<u16> = "Local\\POSDesktop.SingleInstance\0"
+        .encode_utf16()
+        .collect();
+    let show: Vec<u16> = "POSDesktop.Show\0".encode_utf16().collect();
+
+    unsafe {
+        let mutex = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if mutex == 0 {
+            log::warn!("мьютекс единственного экземпляра не создан");
+            return true;
+        }
+        if GetLastError() != ERROR_ALREADY_EXISTS {
+            return true;
+        }
+        let message = RegisterWindowMessageW(show.as_ptr());
+        if message != 0 {
+            PostMessageW(HWND_BROADCAST, message, 0, 0);
+        }
+        false
+    }
+}
+
+#[cfg(not(windows))]
+fn claim_single_instance() -> bool {
+    true
 }
 
 /// Скрывает консольное окно в GUI-режиме.

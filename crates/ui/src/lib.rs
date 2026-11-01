@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod action;
 mod drag;
 
 slint::include_modules!();
@@ -75,6 +76,15 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         hide_from_taskbar(&panels.0);
         hide_from_taskbar(&panels.1);
         hide_from_taskbar(&panels.2);
+        #[cfg(windows)]
+        {
+            // Второй экземпляр просит показать оболочку широковещательным сообщением.
+            if let Some(app) = panels.0.upgrade() {
+                if let Some(hwnd) = hwnd_of(app.window()) {
+                    install_show_message(hwnd);
+                }
+            }
+        }
         if let Some(component) = workspace_weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
@@ -103,6 +113,8 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     }
 
     let panel_state = Arc::new(PanelState::new());
+    // Трей и второй экземпляр управляют панелью через общий обработчик.
+    let _tray = install_actions(&apps, panel_state.clone());
     spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
     spawn_hotkey_worker(apps.as_weak(), panel_state);
 
@@ -274,6 +286,102 @@ fn close_panel(weak: &slint::Weak<AppWindow>, state: &PanelState, reason: &str) 
     state.sticky.store(false, Ordering::SeqCst);
     log::info!("панель закрывается ({reason})");
     animate(weak, 0, -PANEL_WIDTH);
+}
+
+/// Подключает действия из трея и от второго экземпляра.
+///
+/// Возвращённый дескриптор держит иконку трея живой; при выходе из `run` иконка
+/// удаляется вместе с ним.
+fn install_actions(
+    apps: &AppWindow,
+    state: Arc<PanelState>,
+) -> Option<posdesktop_shell::TrayHandle> {
+    let weak = apps.as_weak();
+    action::set_handler(move |command| match command {
+        action::Action::ShowPanel => {
+            open_panel(&weak, &state, "запрос от второго экземпляра", true)
+        }
+        action::Action::TogglePanels => {
+            if state.open.load(Ordering::SeqCst) {
+                close_panel(&weak, &state, "трей");
+            } else {
+                open_panel(&weak, &state, "трей", true);
+            }
+        }
+        action::Action::OpenLogs => open_logs_folder(),
+        action::Action::Quit => {
+            log::info!("выход по команде из трея");
+            let _ = slint::quit_event_loop();
+        }
+    });
+
+    let tray = posdesktop_shell::tray::spawn(|command| {
+        use posdesktop_shell::TrayCommand;
+        let action = match command {
+            TrayCommand::TogglePanels => action::Action::TogglePanels,
+            TrayCommand::OpenLogs => action::Action::OpenLogs,
+            TrayCommand::Quit => action::Action::Quit,
+        };
+        action::post(action);
+    });
+    if tray.is_none() {
+        log::warn!("иконка в трее не создана");
+    }
+    tray
+}
+
+/// Открывает каталог логов в Проводнике.
+fn open_logs_folder() {
+    let dir = posdesktop_core::logging::log_dir();
+    log::info!("открываю логи: {}", dir.display());
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer").arg(dir).spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = dir;
+    }
+}
+
+/// Подписывается на сообщение «показать оболочку» от второго экземпляра.
+#[cfg(windows)]
+fn install_show_message(hwnd: isize) {
+    unsafe {
+        SetWindowSubclass(hwnd, Some(apps_subclass_proc), 2, 0);
+    }
+}
+
+#[cfg(windows)]
+extern "system" fn apps_subclass_proc(
+    hwnd: isize,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+    _id: usize,
+    _data: usize,
+) -> isize {
+    if msg != 0 && msg == show_message() {
+        action::dispatch(action::Action::ShowPanel);
+        return 0;
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// Идентификатор сообщения «показать оболочку», общий для всех экземпляров.
+#[cfg(windows)]
+fn show_message() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+
+    static ID: AtomicU32 = AtomicU32::new(0);
+    let cached = ID.load(AtomicOrdering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    let name: Vec<u16> = "POSDesktop.Show\0".encode_utf16().collect();
+    let id = unsafe { RegisterWindowMessageW(name.as_ptr()) };
+    ID.store(id, AtomicOrdering::Relaxed);
+    id
 }
 
 fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect, state: Arc<PanelState>) {
@@ -625,6 +733,7 @@ extern "system" {
     fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
     fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
     fn RegisterHotKey(hwnd: isize, id: i32, modifiers: u32, vk: u32) -> i32;
+    fn RegisterWindowMessageW(name: *const u16) -> u32;
     fn GetMessageW(
         msg: *mut std::ffi::c_void,
         hwnd: isize,
