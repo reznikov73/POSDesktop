@@ -14,10 +14,12 @@ mod ffi {
     extern "system" {
         pub fn GetCursorPos(point: *mut Point) -> i32;
         pub fn GetSystemMetrics(index: i32) -> i32;
+        pub fn GetAsyncKeyState(vk: i32) -> i16;
     }
 
     pub const SM_CXSCREEN: i32 = 0;
     pub const SM_CYSCREEN: i32 = 1;
+    pub const VK_LBUTTON: i32 = 0x01;
 }
 
 /// Позиция курсора в физических пикселях.
@@ -31,6 +33,17 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
 #[cfg(not(windows))]
 pub fn cursor_pos() -> Option<(i32, i32)> {
     None
+}
+
+/// Нажата ли левая кнопка мыши.
+#[cfg(windows)]
+pub fn left_button_down() -> bool {
+    (unsafe { ffi::GetAsyncKeyState(ffi::VK_LBUTTON) } as u16) & 0x8000 != 0
+}
+
+#[cfg(not(windows))]
+pub fn left_button_down() -> bool {
+    false
 }
 
 /// Прямоугольник основного монитора.

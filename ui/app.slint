@@ -25,17 +25,41 @@ export component WorkspaceWindow inherits Window {
 
     in property <length> ws-width: 1920px;
     in property <length> ws-height: 1080px;
-    in property <[Tile]> tiles: [];
+    in-out property <[Tile]> tiles: [];
+    // Индекс перетаскиваемой плитки, -1 — перетаскивания нет.
+    in property <int> drag-index: -1;
+    // Призрак: место, куда плитка встанет после привязки к сетке.
+    in property <bool> ghost-visible: false;
+    in property <length> ghost-x: 0px;
+    in property <length> ghost-y: 0px;
+    in property <length> ghost-w: 0px;
+    in property <length> ghost-h: 0px;
 
-    for tile in tiles : Rectangle {
+    callback tile-pressed(int);
+
+    // Призрак рисуется под плитками и показывает привязанную позицию.
+    Rectangle {
+        visible: root.ghost-visible;
+        x: root.ghost-x;
+        y: root.ghost-y;
+        width: root.ghost-w;
+        height: root.ghost-h;
+        border-radius: 12px;
+        background: #0c7f6830;
+        border-width: 2px;
+        border-color: #0c7f68;
+        opacity: 0.6;
+    }
+
+    for tile[idx] in root.tiles : Rectangle {
         x: tile.x;
         y: tile.y;
         width: tile.w;
         height: tile.h;
         border-radius: 12px;
-        background: #fbfcfc;
-        border-width: 1px;
-        border-color: #dfe3e5;
+        background: root.drag-index == idx ? #ffffff : #fbfcfc;
+        border-width: root.drag-index == idx ? 2px : 1px;
+        border-color: root.drag-index == idx ? #0c7f68 : #dfe3e5;
 
         Text {
             text: tile.label;
@@ -43,6 +67,15 @@ export component WorkspaceWindow inherits Window {
             font-size: 13px;
             x: 12px;
             y: 12px;
+        }
+
+        TouchArea {
+            mouse-cursor: root.drag-index == idx ? MouseCursor.grabbing : MouseCursor.grab;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                    root.tile-pressed(idx);
+                }
+            }
         }
     }
 }

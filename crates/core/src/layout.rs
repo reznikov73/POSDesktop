@@ -103,6 +103,34 @@ impl Rect {
             && self.y < other.bottom()
             && other.y < self.bottom()
     }
+
+    /// Попадает ли точка внутрь прямоугольника (правая и нижняя границы исключены).
+    pub fn contains_point(&self, x: i32, y: i32) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
+
+    /// Центр прямоугольника.
+    pub fn center(&self) -> (i32, i32) {
+        (self.x + self.w / 2, self.y + self.h / 2)
+    }
+}
+
+/// Привязка координаты при перетаскивании: шаг сетки [`GRID_STEP`] (ТЗ §6.1).
+///
+/// Размеры плиток кратны 88 px, а позиции живут на 8-пиксельной сетке — так
+/// раскладка остаётся валидной и штатные координаты не «прыгают» при отпускании.
+pub fn snap_to_grid(value: i32) -> i32 {
+    (value + GRID_STEP / 2).div_euclid(GRID_STEP) * GRID_STEP
+}
+
+impl Object {
+    /// Подпись плитки: приложение, виджет или пустая строка.
+    pub fn label(&self) -> &str {
+        self.app
+            .as_deref()
+            .or(self.widget.as_deref())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +188,14 @@ pub enum LayoutError {
     MissingGroup(String, String),
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum MoveError {
+    #[error("object {0} not found")]
+    NotFound(String),
+    #[error("no free position for {0} near ({1}, {2})")]
+    NoFreePosition(String, i32, i32),
+}
+
 impl Layout {
     /// Раскладка по умолчанию для основного монитора.
     pub fn default_primary() -> Self {
@@ -187,6 +223,94 @@ impl Layout {
 }
 
 impl Screen {
+    /// Индекс объекта по идентификатору.
+    pub fn index_of(&self, id: &str) -> Option<usize> {
+        self.objects.iter().position(|object| object.id == id)
+    }
+
+    /// Куда встанет объект, если его отпустить в точке (x, y).
+    ///
+    /// Учитывает привязку к сетке и автосдвиг при пересечении, но ничего не
+    /// меняет: UI использует метод для предпросмотра (ТЗ §6.5).
+    pub fn preview_move(&self, id: &str, x: i32, y: i32) -> Result<Rect, MoveError> {
+        let index = self
+            .index_of(id)
+            .ok_or_else(|| MoveError::NotFound(id.to_string()))?;
+        let size = self.objects[index].rect;
+        let target = Rect {
+            x: snap_to_grid(x.max(0)),
+            y: snap_to_grid(y.max(0)),
+            w: size.w,
+            h: size.h,
+        };
+        if self.is_free(index, &target) {
+            return Ok(target);
+        }
+        self.nearest_free(index, target)
+            .ok_or(MoveError::NoFreePosition(
+                id.to_string(),
+                target.x,
+                target.y,
+            ))
+    }
+
+    /// Перемещает объект с привязкой к сетке и автосдвигом при пересечении.
+    ///
+    /// Группа объекта определяется по центру плитки: попала в контейнер —
+    /// закрепляется за ним, вышла — отвязывается (ТЗ §6.3).
+    pub fn move_object(&mut self, id: &str, x: i32, y: i32) -> Result<Rect, MoveError> {
+        let rect = self.preview_move(id, x, y)?;
+        if let Some(index) = self.index_of(id) {
+            self.objects[index].rect = rect;
+            self.objects[index].group_id = self.group_at(rect);
+        }
+        Ok(rect)
+    }
+
+    /// Свободна ли позиция: остальные объекты не пересекаются.
+    fn is_free(&self, index: usize, rect: &Rect) -> bool {
+        self.objects
+            .iter()
+            .enumerate()
+            .all(|(other, object)| other == index || !object.rect.intersects(rect))
+    }
+
+    /// Ближайшая свободная позиция на плиточной сетке — автосдвиг (ТЗ §6.1).
+    ///
+    /// Кандидаты перебираются по возрастанию расстояния, затем по координатам,
+    /// поэтому результат детерминирован.
+    fn nearest_free(&self, index: usize, target: Rect) -> Option<Rect> {
+        const RADIUS: i32 = 12;
+        let mut candidates = Vec::new();
+        for dy in -RADIUS..=RADIUS {
+            for dx in -RADIUS..=RADIUS {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let x = target.x + dx * TILE_UNIT;
+                let y = target.y + dy * TILE_UNIT;
+                if x < 0 || y < 0 {
+                    continue;
+                }
+                candidates.push((dx * dx + dy * dy, x, y));
+            }
+        }
+        candidates.sort_unstable();
+        candidates.into_iter().find_map(|(_, x, y)| {
+            let candidate = Rect { x, y, ..target };
+            self.is_free(index, &candidate).then_some(candidate)
+        })
+    }
+
+    /// Группа, в чьи границы попадает центр объекта.
+    fn group_at(&self, rect: Rect) -> Option<String> {
+        let (cx, cy) = rect.center();
+        self.groups
+            .iter()
+            .find(|group| group.rect.contains_point(cx, cy))
+            .map(|group| group.id.clone())
+    }
+
     pub fn default_screen() -> Self {
         Self {
             panels: vec![
@@ -470,5 +594,101 @@ mod tests {
         let mut layout = Layout::default_primary();
         layout.version = 99;
         assert_eq!(layout.validate(), Err(LayoutError::UnsupportedVersion(99)));
+    }
+
+    #[test]
+    fn snap_rounds_to_8px_grid() {
+        assert_eq!(snap_to_grid(0), 0);
+        assert_eq!(snap_to_grid(6), 8);
+        assert_eq!(snap_to_grid(14), 16);
+        assert_eq!(snap_to_grid(96), 96);
+        assert_eq!(snap_to_grid(105), 104);
+        assert_eq!(snap_to_grid(208), 208);
+    }
+
+    #[test]
+    fn default_layout_survives_its_own_coordinates() {
+        for object in &Screen::default_screen().objects {
+            assert_eq!(snap_to_grid(object.rect.x), object.rect.x, "{}", object.id);
+            assert_eq!(snap_to_grid(object.rect.y), object.rect.y, "{}", object.id);
+        }
+    }
+
+    #[test]
+    fn free_move_keeps_snapped_position() {
+        let mut layout = Layout::default_primary();
+        let screen = layout.monitors.get_mut("primary").expect("screen");
+        let rect = screen.move_object("weather", 400, 100).expect("move");
+        assert_eq!(
+            rect,
+            Rect {
+                x: 400,
+                y: 104,
+                w: 176,
+                h: 88
+            }
+        );
+        assert_eq!(screen.validate(), Ok(()));
+    }
+
+    #[test]
+    fn move_onto_occupied_slot_shifts_to_nearest_free() {
+        let mut layout = Layout::default_primary();
+        let screen = layout.monitors.get_mut("primary").expect("screen");
+        let rect = screen.move_object("weather", 16, 96).expect("move");
+        assert_eq!(
+            rect,
+            Rect {
+                x: 16,
+                y: 8,
+                w: 176,
+                h: 88
+            }
+        );
+        assert_eq!(screen.validate(), Ok(()));
+    }
+
+    #[test]
+    fn move_changes_group_membership() {
+        let mut layout = Layout::default_primary();
+        let screen = layout.monitors.get_mut("primary").expect("screen");
+
+        let outside = screen.move_object("excel", 448, 208).expect("move out");
+        assert_eq!((outside.x, outside.y), (448, 208));
+        assert_eq!(screen.objects[4].group_id, None);
+        assert_eq!(screen.validate(), Ok(()));
+
+        let inside = screen.move_object("excel", 216, 208).expect("move back");
+        assert_eq!((inside.x, inside.y), (216, 208));
+        assert_eq!(screen.objects[4].group_id.as_deref(), Some("office"));
+        assert_eq!(screen.validate(), Ok(()));
+    }
+
+    #[test]
+    fn move_unknown_object_fails() {
+        let mut screen = Screen::default_screen();
+        assert_eq!(
+            screen.move_object("nope", 0, 0),
+            Err(MoveError::NotFound("nope".into()))
+        );
+    }
+
+    #[test]
+    fn preview_does_not_change_layout() {
+        let screen = Screen::default_screen();
+        let before = screen.clone();
+        let rect = screen.preview_move("mail", 400, 400).expect("preview");
+        assert_eq!((rect.x, rect.y), (400, 400));
+        assert_eq!(screen, before);
+    }
+
+    #[test]
+    fn moved_layout_round_trips_through_json() {
+        let mut layout = Layout::default_primary();
+        let screen = layout.monitors.get_mut("primary").expect("screen");
+        screen.move_object("word", 600, 400).expect("move");
+        let json = layout.to_json_pretty();
+        let parsed: Layout = serde_json::from_str(&json).expect("parse");
+        assert_eq!(layout, parsed);
     }
 }

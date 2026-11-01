@@ -40,13 +40,23 @@ pub fn load_or_default(path: &Path) -> Layout {
     }
 }
 
-/// Сохраняет раскладку, создавая каталог при необходимости.
+/// Сохраняет раскладку атомарно: временный файл и переименование.
+///
+/// Невалидная раскладка не пишется — на диске остаётся прежняя версия (ТЗ §9.3).
 pub fn save(path: &Path, layout: &Layout) -> std::io::Result<()> {
+    if let Err(err) = layout.validate() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            err.to_string(),
+        ));
+    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let text = layout.to_json_pretty();
-    fs::write(path, text)
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, text)?;
+    fs::rename(&tmp, path)
 }
 
 #[cfg(test)]
@@ -84,6 +94,36 @@ mod tests {
         fs::write(&path, "{ not json").expect("write");
         let loaded = load_or_default(&path);
         assert_eq!(loaded, Layout::default_primary());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn moved_layout_is_saved_and_loaded() {
+        let path = temp_path("layout-moved.json");
+        let mut layout = Layout::default_primary();
+        {
+            let screen = layout.monitors.get_mut("primary").expect("screen");
+            screen.move_object("weather", 400, 400).expect("move");
+        }
+        save(&path, &layout).expect("save");
+        assert_eq!(load_or_default(&path), layout);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn invalid_layout_is_not_written() {
+        let path = temp_path("layout-invalid.json");
+        let layout = Layout::default_primary();
+        save(&path, &layout).expect("save");
+        let before = fs::read_to_string(&path).expect("read");
+
+        let mut broken = layout.clone();
+        broken.monitors.get_mut("primary").expect("screen").objects[0]
+            .rect
+            .x = 18;
+        let err = save(&path, &broken).expect_err("валидация должна отклонить запись");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(fs::read_to_string(&path).expect("read"), before);
         let _ = fs::remove_file(&path);
     }
 }

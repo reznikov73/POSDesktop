@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod drag;
+
 slint::include_modules!();
 
 const PANEL_WIDTH: i32 = 380;
@@ -50,26 +52,13 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
             Err(err) => log::warn!("не удалось сохранить layout.json: {err}"),
         }
     }
-    let tiles: Vec<Tile> = tiles_model(&layout);
-    let rects: Vec<(i32, i32, i32, i32)> = tiles
-        .iter()
-        .map(|tile| (tile.x as i32, tile.y as i32, tile.w as i32, tile.h as i32))
-        .collect();
-
     let workspace = WorkspaceWindow::new()?;
     // Окно покрывает только габариты плиток: полноэкранная прозрачная
     // поверхность стоит лишних 15–20 МБ памяти.
-    let mut width = 320i32;
-    let mut height = 240i32;
-    for (x, y, w, h) in &rects {
-        width = width.max(x + w + 16);
-        height = height.max(y + h + 16);
-    }
+    let workspace_state = drag::install(&workspace, layout, layout_path);
+    let (width, height) = workspace_state.borrow().window_size();
     workspace.set_ws_width(width as f32);
     workspace.set_ws_height(height as f32);
-    workspace.set_tiles(slint::ModelRc::from(std::rc::Rc::new(
-        slint::VecModel::from(tiles.clone()),
-    )));
 
     workspace.show()?;
     workspace
@@ -78,11 +67,15 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
 
     // HWND появляется только после первого прохода цикла событий.
     let workspace_weak = workspace.as_weak();
+    let state_for_style = workspace_state.clone();
     slint::Timer::single_shot(Duration::from_millis(350), move || {
         if let Some(component) = workspace_weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
-                install_clickthrough_rects(hwnd, rects);
+                let rects = state_for_style
+                    .borrow()
+                    .physical_rects(component.window().scale_factor());
+                install_clickthrough_rects(hwnd, &rects);
                 let rect = window_rect(hwnd);
                 log::info!(
                     "workspace: клик-сквозь вне плиток, hwnd=0x{hwnd:x}, rect=({}, {}) {}x{}",
@@ -162,18 +155,7 @@ fn tiles_model(layout: &Layout) -> Vec<Tile> {
         .monitors
         .values()
         .flat_map(|screen| screen.objects.iter())
-        .map(|object| Tile {
-            x: object.rect.x as f32,
-            y: object.rect.y as f32,
-            w: object.rect.w as f32,
-            h: object.rect.h as f32,
-            label: object
-                .app
-                .clone()
-                .or_else(|| object.widget.clone())
-                .unwrap_or_default()
-                .into(),
-        })
+        .map(drag::tile_of)
         .collect()
 }
 
@@ -237,7 +219,7 @@ pub fn run_clickthrough_test() -> Result<(), slint::PlatformError> {
         if let Some(component) = weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 let rects = vec![(0, 0, threshold * 2, threshold)];
-                install_clickthrough_rects(hwnd, rects);
+                install_clickthrough_rects(hwnd, &rects);
                 log::info!("clickthrough: hwnd=0x{hwnd:x}, интерактивен верх до y={threshold}");
                 println!("clickthrough hwnd=0x{hwnd:x} threshold_y={threshold}");
             } else {
@@ -451,15 +433,25 @@ fn apply_overlay_style(_window: &slint::Window) {}
 
 /// Подписывается на WM_NCHITTEST: интерактивны только указанные прямоугольники.
 #[cfg(windows)]
-fn install_clickthrough_rects(hwnd: isize, rects: Vec<(i32, i32, i32, i32)>) {
-    if let Ok(mut guard) = PASS_RECTS.lock() {
-        *guard = rects;
-    }
+fn install_clickthrough_rects(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
+    update_pass_rects(rects);
     CLICKTHROUGH.store(true, Ordering::Relaxed);
     unsafe {
         SetWindowSubclass(hwnd, Some(subclass_proc), 1, 0);
     }
 }
+
+/// Обновляет интерактивные зоны без повторного сабклассинга (после перетаскивания).
+#[cfg(windows)]
+pub(crate) fn update_pass_rects(rects: &[(i32, i32, i32, i32)]) {
+    if let Ok(mut guard) = PASS_RECTS.lock() {
+        guard.clear();
+        guard.extend_from_slice(rects);
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn update_pass_rects(_rects: &[(i32, i32, i32, i32)]) {}
 
 #[cfg(windows)]
 static PASS_RECTS: Mutex<Vec<(i32, i32, i32, i32)>> = Mutex::new(Vec::new());

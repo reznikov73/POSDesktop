@@ -5,8 +5,8 @@ pub mod logging;
 pub mod store;
 
 pub use layout::{
-    Density, Edge, Group, Layout, LayoutError, Object, ObjectKind, Panel, PanelMode, PanelType,
-    Rect, Screen, GRID_STEP, LAYOUT_VERSION, TILE_UNIT,
+    snap_to_grid, Density, Edge, Group, Layout, LayoutError, MoveError, Object, ObjectKind, Panel,
+    PanelMode, PanelType, Rect, Screen, GRID_STEP, LAYOUT_VERSION, TILE_UNIT,
 };
 pub use store::{default_path as default_layout_path, load_or_default, save};
 
