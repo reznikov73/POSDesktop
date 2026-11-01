@@ -82,9 +82,15 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         if let Some(component) = workspace_weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
-                send_to_bottom(hwnd);
                 install_clickthrough_rects(hwnd, rects);
-                log::info!("workspace: клик-сквозь вне плиток, hwnd=0x{hwnd:x}");
+                let rect = window_rect(hwnd);
+                log::info!(
+                    "workspace: клик-сквозь вне плиток, hwnd=0x{hwnd:x}, rect=({}, {}) {}x{}",
+                    rect.0,
+                    rect.1,
+                    rect.2,
+                    rect.3
+                );
             } else {
                 log::warn!("workspace: HWND не получен");
             }
@@ -100,6 +106,7 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     spawn_trigger_worker(apps.as_weak(), screen);
 
     slint::run_event_loop()?;
+    log::info!("цикл событий завершён");
     Ok(())
 }
 
@@ -383,8 +390,34 @@ fn apply_tool_style(hwnd: isize) {
     }
 }
 
-/// Опускает окно в самый низ z-порядка (desktop-слой).
+/// Прямоугольник окна в экранных координатах.
 #[cfg(windows)]
+fn window_rect(hwnd: isize) -> (i32, i32, i32, i32) {
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    unsafe {
+        GetWindowRect(hwnd, &mut rect);
+    }
+    (
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    )
+}
+
+#[cfg(not(windows))]
+fn window_rect(_hwnd: isize) -> (i32, i32, i32, i32) {
+    (0, 0, 0, 0)
+}
+
+/// Опускает окно в самый низ z-порядка (не используется).
+#[cfg(windows)]
+#[allow(dead_code)]
 fn send_to_bottom(hwnd: isize) {
     unsafe {
         SetWindowPos(
@@ -449,10 +482,20 @@ const SWP_NOMOVE: u32 = 0x0002;
 const SWP_NOACTIVATE: u32 = 0x0010;
 
 #[cfg(windows)]
+#[repr(C)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[cfg(windows)]
 #[link(name = "user32")]
 extern "system" {
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+    fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
     fn SetWindowPos(
         hwnd: isize,
         insert_after: isize,
