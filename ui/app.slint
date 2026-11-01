@@ -9,10 +9,13 @@ export struct AppGroup {
 
 export component AppWindow inherits Window {
     title: "POS Desktop";
+    no-frame: true;
     width: 380px;
-    height: 720px;
+    height: win-height;
     background: #fbfcfc;
     default-font-family: "Segoe UI";
+
+    in property <length> win-height: 720px;
 
     in property <[AppGroup]> groups: [
         {
@@ -115,6 +118,131 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
+    }
+}
+
+export component StatusBar inherits Window {
+    title: "POS Desktop — статус";
+    no-frame: true;
+    width: bar-width;
+    height: 44px;
+    background: #fbfcfc;
+    default-font-family: "Segoe UI";
+
+    in property <length> bar-width: 1280px;
+
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: #e6eaea;
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 18px;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "ИЗБРАННОЕ";
+                color: #8a8c8f;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "Почта 12";
+                color: #17181a;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "POSvpn — защищено";
+                color: #0c7f68;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "Бэкап — вчера";
+                color: #565862;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "CI — упал";
+                color: #b3261e;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component ServicesBar inherits Window {
+    title: "POS Desktop — сервисы";
+    no-frame: true;
+    width: bar-width;
+    height: 48px;
+    background: #fbfcfc;
+    default-font-family: "Segoe UI";
+
+    in property <length> bar-width: 1280px;
+
+    Rectangle {
+        y: 0;
+        height: 1px;
+        background: #e6eaea;
+    }
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 18px;
+        alignment: center;
+
+        Text {
+            text: "СЕРВИСЫ";
+            color: #8a8c8f;
+            font-size: 10px;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "POSCloud — работает";
+            color: #17181a;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "POSvpn — защищено";
+            color: #17181a;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "grm-autobackup — работает";
+            color: #17181a;
+            font-size: 12px;
+            vertical-alignment: center;
         }
     }
 }

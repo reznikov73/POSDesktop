@@ -6,6 +6,8 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+posdesktop-core = { path = "../core" }
+posdesktop-shell = { path = "../shell" }
 slint = { version = "1", features = ["raw-window-handle-06"] }
 raw-window-handle = "0.6"
 log.workspace = true

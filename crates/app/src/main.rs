@@ -30,6 +30,8 @@ fn main() {
         Some("--snapshot") => {
             posdesktop_ui::run_snapshot().map_err(|err| format!("snapshot не удался: {err}"))
         }
+        Some("--clickthrough-test") => posdesktop_ui::run_clickthrough_test()
+            .map_err(|err| format!("clickthrough-тест не удался: {err}")),
         Some("-h") | Some("--help") => {
             help();
             Ok(())
