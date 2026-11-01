@@ -34,6 +34,9 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     status.show()?;
     services.show()?;
 
+    // Панели — часть оболочки: кнопки на панели задач им не нужны.
+    let panels = (apps.as_weak(), status.as_weak(), services.as_weak());
+
     apps.window()
         .set_position(slint::PhysicalPosition::new(-PANEL_WIDTH, 0));
     status
@@ -69,6 +72,9 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     let workspace_weak = workspace.as_weak();
     let state_for_style = workspace_state.clone();
     slint::Timer::single_shot(Duration::from_millis(350), move || {
+        hide_from_taskbar(&panels.0);
+        hide_from_taskbar(&panels.1);
+        hide_from_taskbar(&panels.2);
         if let Some(component) = workspace_weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
@@ -431,6 +437,45 @@ fn apply_overlay_style(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_overlay_style(_window: &slint::Window) {}
 
+/// Убирает окно панели с панели задач и из Alt+Tab.
+fn hide_from_taskbar<T: slint::ComponentHandle + 'static>(weak: &slint::Weak<T>) {
+    if let Some(window) = weak.upgrade() {
+        apply_panel_style(window.window());
+    }
+}
+
+/// Снимает WS_EX_APPWINDOW и ставит WS_EX_TOOLWINDOW.
+#[cfg(windows)]
+fn apply_panel_style(window: &slint::Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let slint_handle = window.window_handle();
+    let Ok(handle) = slint_handle.window_handle() else {
+        log::warn!("panel: окно ещё не создано, стили не применены");
+        return;
+    };
+    let RawWindowHandle::Win32(win32) = handle.as_ref() else {
+        return;
+    };
+    let hwnd = win32.hwnd.get();
+
+    unsafe {
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let new_style = (ex_style & !WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+        if new_style == ex_style {
+            return;
+        }
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_style);
+        // Панель задач пересчитывает кнопки только после скрытия и показа окна.
+        ShowWindow(hwnd, SW_HIDE);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        log::info!("panel: hwnd=0x{hwnd:x}, кнопка с панели задач убрана");
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_panel_style(_window: &slint::Window) {}
+
 /// Подписывается на WM_NCHITTEST: интерактивны только указанные прямоугольники.
 #[cfg(windows)]
 fn install_clickthrough_rects(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
@@ -551,6 +596,10 @@ const WS_EX_NOACTIVATE: isize = 0x0800_0000;
 #[cfg(windows)]
 const HWND_TOPMOST: isize = -1;
 #[cfg(windows)]
+const SW_HIDE: i32 = 0;
+#[cfg(windows)]
+const SW_SHOWNOACTIVATE: i32 = 4;
+#[cfg(windows)]
 const HWND_BOTTOM: isize = 1;
 #[cfg(windows)]
 const SWP_NOSIZE: u32 = 0x0001;
@@ -574,6 +623,7 @@ extern "system" {
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
     fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
+    fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
     fn RegisterHotKey(hwnd: isize, id: i32, modifiers: u32, vk: u32) -> i32;
     fn GetMessageW(
         msg: *mut std::ffi::c_void,

@@ -73,6 +73,7 @@ fn layout_check() -> Result<(), String> {
 
 fn run_ui(overlay: bool) -> Result<(), String> {
     log::info!("открываю окно (overlay={overlay})");
+    hide_console();
     posdesktop_ui::run(overlay).map_err(|err| format!("не удалось открыть окно: {err}"))
 }
 
@@ -127,6 +128,43 @@ fn open_logs(log_path: &Path) {
         }
     }
 }
+
+/// Скрывает консольное окно в GUI-режиме.
+///
+/// Консоль прячется, только если она целиком принадлежит процессу: при запуске
+/// из терминала (`cargo run`, VS Code) в ней живут другие процессы, и скрывать
+/// её нельзя — иначе исчезнет окно терминала разработчика.
+#[cfg(windows)]
+fn hide_console() {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetConsoleWindow() -> isize;
+        fn GetConsoleProcessList(process_list: *mut u32, count: u32) -> u32;
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+    }
+
+    const SW_HIDE: i32 = 0;
+
+    unsafe {
+        let console = GetConsoleWindow();
+        if console == 0 {
+            return;
+        }
+        let mut list = [0u32; 4];
+        let attached = GetConsoleProcessList(list.as_mut_ptr(), list.len() as u32);
+        if attached == 1 {
+            ShowWindow(console, SW_HIDE);
+            log::info!("консоль скрыта (GUI-режим)");
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_console() {}
 
 #[cfg(windows)]
 fn show_error(message: &str, log_path: &Path) {
