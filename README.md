@@ -21,6 +21,19 @@ apps/d0-spike         замер триггеров на реальном экр
 ui/app.slint          экраны интерфейса
 ```
 
+## Запуск
+
+```powershell
+cargo run -p posdesktop-ui-app                    # окно панели
+cargo run -p posdesktop-ui-app -- --overlay       # оверлей: поверх всех, без фокуса
+cargo run -p posdesktop -- --demo                 # CLI: модели данных
+cargo run -p posdesktop-d0-spike                  # триггеры краёв экрана
+```
+
+В VS Code: `F5` → «Debug POS Desktop (UI)» или «Debug POS Desktop (overlay)».
+Оверлейное окно не берёт фокус, поэтому `Alt+F4` его не закрывает —
+останавливайте через Stop в отладчике или `Ctrl+C` в терминале.
+
 ## Сборка
 
 ```powershell

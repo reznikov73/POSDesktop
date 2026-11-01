@@ -3,22 +3,26 @@
 slint::include_modules!();
 
 /// Открывает окно приложения и запускает цикл событий.
-pub fn run() -> Result<(), slint::PlatformError> {
+///
+/// `overlay = true` — окно становится оверлеем: поверх всех, без кнопки
+/// на панели задач, не забирает фокус. Без флага — обычное окно.
+pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
-    let weak = window.as_weak();
 
-    // HWND появляется только после создания окна бэкендом.
-    slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
-        if let Some(component) = weak.upgrade() {
-            apply_overlay_style(component.window());
-        }
-    });
+    if overlay {
+        let weak = window.as_weak();
+        // HWND появляется только после создания окна бэкендом.
+        slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+            if let Some(component) = weak.upgrade() {
+                apply_overlay_style(component.window());
+            }
+        });
+    }
 
     window.run()
 }
 
-/// Превращает окно в оверлей: поверх всех, без кнопки на панели задач,
-/// не забирает фокус у активного приложения.
+/// Превращает окно в оверлей.
 #[cfg(windows)]
 fn apply_overlay_style(window: &slint::Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};

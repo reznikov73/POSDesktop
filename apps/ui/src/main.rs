@@ -1,3 +1,4 @@
 fn main() -> Result<(), slint::PlatformError> {
-    posdesktop_ui::run()
+    let overlay = std::env::args().any(|arg| arg == "--overlay");
+    posdesktop_ui::run(overlay)
 }

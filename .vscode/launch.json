@@ -17,6 +17,19 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug POS Desktop (overlay)",
+      "cargo": {
+        "args": ["build", "--bin", "posdesktop-ui", "-p", "posdesktop-ui-app"]
+      },
+      "args": ["--overlay"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "SLINT_BACKEND": "winit-femtovg"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug CLI",
       "cargo": {
         "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
