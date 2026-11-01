@@ -4,15 +4,25 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug POS Desktop",
+      "name": "Debug POS Desktop (UI)",
       "cargo": {
-        "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
+        "args": ["build", "--bin", "posdesktop-ui", "-p", "posdesktop-ui-app"]
       },
       "args": [],
       "cwd": "${workspaceFolder}",
       "env": {
         "SLINT_BACKEND": "winit-femtovg"
       }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug CLI",
+      "cargo": {
+        "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
+      },
+      "args": ["--help"],
+      "cwd": "${workspaceFolder}"
     },
     {
       "type": "lldb",

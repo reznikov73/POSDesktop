@@ -3436,7 +3436,7 @@ dependencies = [
 
 [[package]]
 name = "posdesktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "posdesktop-ai",
  "posdesktop-core",
@@ -3445,11 +3445,11 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-ai"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "posdesktop-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -3458,25 +3458,25 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-d0-spike"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "posdesktop-shell",
 ]
 
 [[package]]
 name = "posdesktop-integrations"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "posdesktop-shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "posdesktop-core",
 ]
 
 [[package]]
 name = "posdesktop-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "raw-window-handle",
  "slint",
@@ -3485,7 +3485,7 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-ui-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "posdesktop-ui",
  "slint",
