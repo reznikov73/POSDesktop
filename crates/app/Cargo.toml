@@ -1,0 +1,15 @@
+[package]
+name = "posdesktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "posdesktop"
+path = "src/main.rs"
+
+[dependencies]
+posdesktop-core = { path = "../core" }
+posdesktop-ai = { path = "../ai" }
+posdesktop-integrations = { path = "../integrations" }

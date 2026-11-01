@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug POS Desktop",
+      "cargo": {
+        "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "SLINT_BACKEND": "winit-femtovg"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug D0 spike",
+      "cargo": {
+        "args": ["build", "--bin", "posdesktop-d0-spike", "-p", "posdesktop-d0-spike"]
+      },
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug tests",
+      "cargo": {
+        "args": ["test", "--workspace", "--no-run"]
+      },
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

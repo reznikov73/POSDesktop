@@ -1,0 +1,11 @@
+target/
+dist/
+*.msi
+*.exe
+*.pfx
+*.p12
+.env
+secrets.*
+.vs/
+.idea/
+*.log

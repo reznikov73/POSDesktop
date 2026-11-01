@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "slint.slint",
+    "tamasfe.even-better-toml",
+    "ms-vscode.powershell",
+    "editorconfig.editorconfig"
+  ]
+}
