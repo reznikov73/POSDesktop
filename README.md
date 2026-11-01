@@ -33,8 +33,9 @@ cargo run -p posdesktop-d0-spike         # триггеры краёв экра�
 Оверлейное окно не берёт фокус, поэтому `Alt+F4` его не закрывает —
 останавливайте через Stop в отладчике или `Ctrl+C` в терминале.
 
-Логи: `%APPDATA%\POSDesktop\logs\app.log` (ротация 5 МБ × 5).
-Уровень: `$env:POSDESKTOP_LOG = 'debug'` перед запуском.
+Логи: `logs\app.log` в корне проекта (ротация 5 МБ × 5), путь можно
+переопределить переменной `POSDESKTOP_LOG_DIR`. Открыть папку:
+`posdesktop.exe --logs`. Уровень: `$env:POSDESKTOP_LOG = 'debug'`.
 
 ## Сборка
 

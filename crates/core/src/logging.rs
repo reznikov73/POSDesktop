@@ -1,4 +1,11 @@
-//! Логирование в `%APPDATA%\POSDesktop\logs\app.log`.
+//! Логирование в `logs/app.log` рядом с проектом.
+//!
+//! Порядок поиска каталога:
+//! 1. `POSDESKTOP_LOG_DIR` — если задан;
+//! 2. корень проекта (ближайший `Cargo.toml` выше exe);
+//! 3. каталог exe;
+//! 4. `%APPDATA%\POSDesktop\logs` (или `%USERPROFILE%\AppData\Roaming`);
+//! 5. системный temp.
 //!
 //! Уровень задаётся переменной `POSDESKTOP_LOG`:
 //! `error`, `warn`, `info` (по умолчанию), `debug`, `trace`.
@@ -9,13 +16,42 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// Порог ротации одного файла.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
-/// Сколько поколений хранить.
 const KEEP_FILES: u32 = 5;
 
-/// Каталог логов.
+/// Каталог логов по правилам выше.
 pub fn log_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("POSDESKTOP_LOG_DIR") {
+        return PathBuf::from(dir);
+    }
+    if let Some(root) = project_root() {
+        return root.join("logs");
+    }
+    if let Some(dir) = exe_dir() {
+        return dir.join("logs");
+    }
+    appdata_logs()
+}
+
+fn exe_dir() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
+/// Ищет корень проекта: ближайший каталог с `Cargo.toml` вверх по дереву.
+fn project_root() -> Option<PathBuf> {
+    let mut dir = exe_dir()?;
+    for _ in 0..6 {
+        if dir.join("Cargo.toml").is_file() {
+            return Some(dir);
+        }
+        dir = dir.parent()?.to_path_buf();
+    }
+    None
+}
+
+fn appdata_logs() -> PathBuf {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .or_else(|| {
@@ -28,26 +64,40 @@ pub fn log_dir() -> PathBuf {
 
 /// Инициализирует логгер и возвращает путь к файлу.
 pub fn init() -> PathBuf {
-    let dir = log_dir();
-    let _ = fs::create_dir_all(&dir);
-    let path = dir.join("app.log");
-    rotate(&path);
-
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .ok();
     let level = level_from_env();
+    let mut candidates = vec![log_dir()];
+    candidates.push(appdata_logs());
+    candidates.push(std::env::temp_dir().join("POSDesktop").join("logs"));
 
+    for dir in candidates {
+        if fs::create_dir_all(&dir).is_err() {
+            continue;
+        }
+        let path = dir.join("app.log");
+        let Ok(file) = OpenOptions::new().create(true).append(true).open(&path) else {
+            continue;
+        };
+        rotate(&path);
+        let logger = Logger {
+            file: Mutex::new(Some(file)),
+            level,
+        };
+        let _ = log::set_boxed_logger(Box::new(logger));
+        log::set_max_level(level);
+        return path;
+    }
+
+    // Не удалось открыть ни один файл — пишем только в stderr.
     let logger = Logger {
-        file: Mutex::new(file),
+        file: Mutex::new(None),
         level,
     };
     let _ = log::set_boxed_logger(Box::new(logger));
     log::set_max_level(level);
-
-    path
+    std::env::temp_dir()
+        .join("POSDesktop")
+        .join("logs")
+        .join("app.log")
 }
 
 fn level_from_env() -> LevelFilter {
