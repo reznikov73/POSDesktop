@@ -17,6 +17,17 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Run POS Desktop (без пересборки)",
+      "program": "${workspaceFolder}/target/debug/posdesktop.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "SLINT_BACKEND": "winit-femtovg"
+      }
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug POS Desktop (overlay)",
       "cargo": {
         "args": ["build", "--bin", "posdesktop", "-p", "posdesktop"]
