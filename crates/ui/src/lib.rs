@@ -125,9 +125,9 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
 
     let panel_state = Arc::new(PanelState::new());
     // Трей и второй экземпляр управляют панелью через общий обработчик.
-    let _tray = install_actions(&apps, panel_state.clone());
+    let _tray = install_actions(&apps, &status, &services, panel_state.clone());
     spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
-    spawn_hotkey_worker(apps.as_weak(), panel_state);
+    spawn_hotkey_worker();
 
     slint::run_event_loop()?;
     log::info!("цикл событий завершён");
@@ -384,9 +384,16 @@ fn close_panel(weak: &slint::Weak<AppWindow>, state: &PanelState, reason: &str) 
 /// удаляется вместе с ним.
 fn install_actions(
     apps: &AppWindow,
+    status: &StatusBar,
+    services: &ServicesBar,
     state: Arc<PanelState>,
 ) -> Option<posdesktop_shell::TrayHandle> {
     let weak = apps.as_weak();
+    let status_weak = status.as_weak();
+    let services_weak = services.as_weak();
+    let status_visible = std::cell::Cell::new(true);
+    let services_visible = std::cell::Cell::new(true);
+
     action::set_handler(move |command| match command {
         action::Action::ShowPanel => {
             open_panel(&weak, &state, "запрос от второго экземпляра", true)
@@ -397,6 +404,14 @@ fn install_actions(
             } else {
                 open_panel(&weak, &state, "трей", true);
             }
+        }
+        action::Action::ToggleStatus => toggle_dock(&status_weak, &status_visible, "статус"),
+        action::Action::ToggleServices => toggle_dock(&services_weak, &services_visible, "сервисы"),
+        action::Action::HideAll => {
+            close_panel(&weak, &state, "свернуть все");
+            hide_dock(&status_weak, &status_visible);
+            hide_dock(&services_weak, &services_visible);
+            log::info!("все панели свёрнуты");
         }
         action::Action::OpenLogs => open_logs_folder(),
         action::Action::Quit => {
@@ -418,6 +433,40 @@ fn install_actions(
         log::warn!("иконка в трее не создана");
     }
     tray
+}
+
+/// Показывает или скрывает док-панель по горячей клавише.
+fn toggle_dock<T: slint::ComponentHandle + 'static>(
+    weak: &slint::Weak<T>,
+    visible: &std::cell::Cell<bool>,
+    name: &str,
+) {
+    let Some(window) = weak.upgrade() else {
+        return;
+    };
+    if visible.get() {
+        if let Err(err) = window.hide() {
+            log::warn!("не удалось скрыть панель {name}: {err}");
+        }
+        visible.set(false);
+        log::info!("панель {name} скрыта");
+    } else if let Err(err) = window.show() {
+        log::warn!("не удалось показать панель {name}: {err}");
+    } else {
+        visible.set(true);
+        log::info!("панель {name} показана");
+    }
+}
+
+/// Скрывает док-панель без переключения.
+fn hide_dock<T: slint::ComponentHandle + 'static>(
+    weak: &slint::Weak<T>,
+    visible: &std::cell::Cell<bool>,
+) {
+    if let Some(window) = weak.upgrade() {
+        let _ = window.hide();
+        visible.set(false);
+    }
 }
 
 /// Открывает каталог логов в Проводнике.
@@ -516,55 +565,83 @@ fn spawn_trigger_worker(weak: slint::Weak<AppWindow>, screen: ScreenRect, state:
     });
 }
 
-/// Глобальный хоткей Ctrl+Alt+1 — открыть/закрыть панель приложений.
+/// Глобальные хоткеи панелей (ТЗ §5.6).
+///
+/// Ctrl+Alt+1 — приложения, Ctrl+Alt+3 — статус, Ctrl+Alt+4 — сервисы,
+/// Ctrl+Alt+Esc — свернуть все. Если комбинация занята, пробуется вариант с Shift.
+/// Ctrl+Alt+2 закреплён за панелью ИИ и появится вместе с ней.
 #[cfg(windows)]
-fn spawn_hotkey_worker(weak: slint::Weak<AppWindow>, state: Arc<PanelState>) {
+fn spawn_hotkey_worker() {
     std::thread::spawn(move || {
         const MOD_ALT: u32 = 0x0001;
         const MOD_CONTROL: u32 = 0x0002;
         const MOD_SHIFT: u32 = 0x0004;
         const MOD_NOREPEAT: u32 = 0x4000;
-        const VK_1: u32 = 0x31;
+        const WM_HOTKEY: u32 = 0x0312;
 
         let base = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
-        let mut label = "Ctrl+Alt+1";
-        let mut registered = unsafe { RegisterHotKey(0, HOTKEY_PANEL, base, VK_1) };
+        let specs: [(i32, u32, &str, action::Action); 4] = [
+            (1, 0x31, "Ctrl+Alt+1", action::Action::TogglePanels),
+            (3, 0x33, "Ctrl+Alt+3", action::Action::ToggleStatus),
+            (4, 0x34, "Ctrl+Alt+4", action::Action::ToggleServices),
+            (5, 0x1B, "Ctrl+Alt+Esc", action::Action::HideAll),
+        ];
 
-        if registered == 0 {
+        let mut registered: Vec<(i32, action::Action)> = Vec::new();
+        for (id, key, label, command) in specs {
+            if unsafe { RegisterHotKey(0, id, base, key) } != 0 {
+                log::info!("хоткей {label} зарегистрирован");
+                registered.push((id, command));
+                continue;
+            }
             let code = unsafe { GetLastError() };
-            log::warn!("Ctrl+Alt+1 занят (код {code}), пробую Ctrl+Alt+Shift+1");
-            registered = unsafe { RegisterHotKey(0, HOTKEY_PANEL, base | MOD_SHIFT, VK_1) };
-            if registered != 0 {
-                label = "Ctrl+Alt+Shift+1";
+            if unsafe { RegisterHotKey(0, id, base | MOD_SHIFT, key) } != 0 {
+                log::info!("хоткей {label} занят (код {code}), работает Shift-вариант");
+                registered.push((id, command));
             } else {
-                let code = unsafe { GetLastError() };
-                log::warn!("Ctrl+Alt+Shift+1 тоже занят (код {code}); хоткей отключён");
-                return;
+                log::warn!("хоткей {label} недоступен (код {code})");
             }
         }
+        log::info!("Ctrl+Alt+2 закреплён за панелью ИИ — она ещё не реализована");
 
-        log::info!("хоткей {label} зарегистрирован");
+        if registered.is_empty() {
+            return;
+        }
 
         loop {
-            let mut buffer = [0u8; 64];
+            let mut message = Msg::default();
             let result =
-                unsafe { GetMessageW(buffer.as_mut_ptr() as *mut std::ffi::c_void, 0, 0, 0) };
+                unsafe { GetMessageW(&mut message as *mut Msg as *mut std::ffi::c_void, 0, 0, 0) };
             if result <= 0 {
                 break;
             }
-            if state.open.load(Ordering::SeqCst) {
-                close_panel(&weak, &state, &format!("хоткей {label}"));
-            } else {
-                open_panel(&weak, &state, &format!("хоткей {label}"), true);
+            if message.message != WM_HOTKEY {
+                continue;
+            }
+            let id = message.w_param as i32;
+            if let Some((_, command)) = registered.iter().find(|(hotkey, _)| *hotkey == id) {
+                action::post(*command);
             }
         }
     });
 }
 
 #[cfg(not(windows))]
-fn spawn_hotkey_worker(_weak: slint::Weak<AppWindow>, _state: Arc<PanelState>) {}
+fn spawn_hotkey_worker() {}
 
-const HOTKEY_PANEL: i32 = 1;
+/// Сообщение Windows из очереди потока (нужно для разбора WM_HOTKEY).
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Default)]
+struct Msg {
+    hwnd: isize,
+    message: u32,
+    w_param: usize,
+    l_param: isize,
+    time: u32,
+    point_x: i32,
+    point_y: i32,
+}
 
 fn animate(weak: &slint::Weak<AppWindow>, from: i32, to: i32) {
     let steps = (SLIDE_MS / FRAME_MS).max(1) as i32;
