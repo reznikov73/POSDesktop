@@ -40,6 +40,7 @@ export component WorkspaceWindow inherits Window {
     in property <length> ghost-h: 0px;
 
     callback tile-pressed(int);
+    callback tile-clicked(int);
 
     // Призрак рисуется под плитками и показывает привязанную позицию.
     Rectangle {
@@ -115,6 +116,9 @@ export component WorkspaceWindow inherits Window {
                 if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
                     root.tile-pressed(idx);
                 }
+            }
+            clicked => {
+                root.tile-clicked(idx);
             }
         }
     }

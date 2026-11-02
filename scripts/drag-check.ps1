@@ -25,6 +25,8 @@ public class DragCheck {
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessageW(string name);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
     public const uint LEFTDOWN = 0x0002, LEFTUP = 0x0004;
     public const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010;
     static readonly IntPtr Topmost = new IntPtr(-1);
@@ -103,6 +105,9 @@ for ($i = 0; $i -lt 6; $i++) {
 }
 $log = Join-Path $exeRoot 'logs\app.log'
 
+Get-Process posdesktop -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Milliseconds 500
+
 $proc = Start-App $root
 Start-Sleep -Seconds 3
 $hwnd = [DragCheck]::Find([uint32]$proc.Id, 'POS Desktop — рабочая область')
@@ -111,7 +116,16 @@ if ($hwnd -eq [IntPtr]::Zero) {
     throw 'окно рабочей области не найдено'
 }
 [DragCheck]::Bring($hwnd)
-Start-Sleep -Milliseconds 300
+Start-Sleep -Milliseconds 400
+
+$probe = New-Object DragCheck+POINT
+$probe.X = 288
+$probe.Y = 140
+$over = [DragCheck]::WindowFromPoint($probe)
+if ($over -ne $hwnd) {
+    Stop-Process -Id $proc.Id -Force
+    throw "точка захвата перекрыта другим окном ($over), окно оболочки $hwnd"
+}
 
 $before = Get-Tile $layout 'weather'
 "старт: weather=($($before.x), $($before.y))"

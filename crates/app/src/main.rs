@@ -38,6 +38,17 @@ fn main() {
         }
         Some("--clickthrough-test") => posdesktop_ui::run_clickthrough_test()
             .map_err(|err| format!("clickthrough-тест не удался: {err}")),
+        Some("--launch") => {
+            let name = args.get(1).cloned().unwrap_or_default();
+            if name.is_empty() {
+                println!("USAGE: posdesktop --launch <название>");
+                Ok(())
+            } else if posdesktop_ui::run_launch(&name) {
+                Ok(())
+            } else {
+                Err(format!("не удалось запустить {name}"))
+            }
+        }
         Some("--mail") => {
             mail_report();
             Ok(())
@@ -157,6 +168,7 @@ fn help() {
     println!("        --panel-snapshot [файл] снапшот панели приложений в BMP");
     println!("        --tiles-snapshot [файл] снапшот плиток рабочей области в BMP");
     println!("        --mail               счётчики почты из Soroka");
+    println!("        --launch <название>  запустить приложение из меню «Пуск»");
     println!("        --workspace-snapshot снапшот рабочей области (прозрачность)");
     println!("        --clickthrough-test  проверить клик-сквозь");
     println!("        --logs               показать путь к логам и открыть папку");

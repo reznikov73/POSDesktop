@@ -32,6 +32,8 @@ pub(crate) struct Workspace {
     screen_key: String,
     model: Rc<VecModel<Tile>>,
     drag: Option<Drag>,
+    /// Когда закончилось последнее перетаскивание — чтобы клик после него не запускал приложение.
+    drag_ended: Option<std::time::Instant>,
     /// Откат и повтор перемещений (ТЗ §6.3).
     history: History,
     /// Таймер кадров; в покое тикает редко.
@@ -69,6 +71,7 @@ pub(crate) fn install(
         screen_key,
         model,
         drag: None,
+        drag_ended: None,
         history: History::default(),
         timer: Timer::default(),
     }));
@@ -90,6 +93,13 @@ pub(crate) fn install(
     ui.on_tile_pressed(move |index| {
         if let (Some(state), Some(ui)) = (press_state.upgrade(), press_ui.upgrade()) {
             begin(&state, &ui, index);
+        }
+    });
+
+    let click_state = Rc::downgrade(&state);
+    ui.on_tile_clicked(move |index| {
+        if let Some(state) = click_state.upgrade() {
+            state.borrow().activate(index);
         }
     });
 
@@ -147,6 +157,34 @@ impl Workspace {
         match save(&self.path, &self.layout) {
             Ok(()) => log::info!("layout.json сохранён: {}", self.path.display()),
             Err(err) => log::error!("не удалось сохранить layout.json: {err}"),
+        }
+    }
+
+    /// Клик по плитке: запуск приложения из каталога «Пуск».
+    ///
+    /// Сразу после перетаскивания клик игнорируется — иначе отпускание плитки
+    /// запускало бы приложение.
+    pub(crate) fn activate(&self, index: i32) {
+        if self
+            .drag_ended
+            .is_some_and(|ended| ended.elapsed() < Duration::from_millis(300))
+        {
+            return;
+        }
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        let Some(screen) = self.layout.monitors.get(&self.screen_key) else {
+            return;
+        };
+        let Some(object) = screen.objects.get(index) else {
+            return;
+        };
+
+        if let Some(app) = &object.app {
+            launch_app(app);
+        } else if let Some(widget) = &object.widget {
+            log::info!("виджет {widget}: действия пока нет");
         }
     }
 
@@ -322,6 +360,15 @@ impl Workspace {
             }
             None => (tile.x as i32, tile.y as i32),
         };
+        // Клик без движения — это не перемещение: плитка остаётся на месте,
+        // а обработчик клика запустит приложение.
+        if (x - start.x).abs() <= 3 && (y - start.y).abs() <= 3 {
+            tile.x = start.x as f32;
+            tile.y = start.y as f32;
+            self.model.set_row_data(index, tile);
+            return;
+        }
+
         let moved = match self.layout.monitors.get_mut(&self.screen_key) {
             Some(screen) => screen.move_object(&drag.id, x, y),
             None => return,
@@ -347,6 +394,20 @@ impl Workspace {
         }
 
         self.refresh(ui);
+        self.drag_ended = Some(std::time::Instant::now());
+    }
+}
+
+/// Запускает приложение по названию: ищем ярлык в меню «Пуск».
+fn launch_app(name: &str) {
+    let Some(path) = posdesktop_shell::icons::find_shortcut(name) else {
+        log::warn!("запуск {name}: ярлык в меню «Пуск» не найден");
+        return;
+    };
+    if posdesktop_shell::launch::open(&path) {
+        log::info!("запуск {name}: {}", path.display());
+    } else {
+        log::warn!("запуск {name}: ShellExecute не открыл {}", path.display());
     }
 }
 

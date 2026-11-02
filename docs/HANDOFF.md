@@ -1,7 +1,7 @@
 # Передача проекта: POS Desktop
 
 **Дата:** 2026-11-01
-**Версия:** 0.1.18
+**Версия:** 0.1.20
 **Последний коммит:** см. `git log -1`
 **Канонический репозиторий:** `E:\Work\VSC\POSDesktop`
 **Репозиторий GitHub:** https://github.com/reznikov73/POSDesktop (ещё не создан, см. «Публикация»)
@@ -57,6 +57,8 @@ POS Desktop — оболочка рабочего стола Windows: панел
 | Иконки плиток из Shell | настоящие иконки приложений, монограмма — запасной вариант (0.1.16) |
 | Откат и повтор перемещений | 20 шагов, `Ctrl+Alt+Z` / `Ctrl+Alt+Y` и пункты меню трея (0.1.17) |
 | Почта из Soroka | счётчик непрочитанных в статус-баре из `soroka.db` (0.1.18) |
+| Запуск приложений с плитки | клик по плитке открывает ярлык из меню «Пуск» (0.1.19) |
+| Клик не двигает плитку | порог 3 px: щелчок без движения не считается перемещением (0.1.20) |
 | Трей: иконка и меню (показать/скрыть, логи, выход) | работает (0.1.12) |
 | Единственный экземпляр: повторный запуск показывает панель | работает (0.1.12) |
 | Клик-сквозь вне плиток | работает |
@@ -72,7 +74,7 @@ POS Desktop — оболочка рабочего стола Windows: панел
 
 ```
 crates/core         layout (модель + валидация), store (layout.json), history (undo), logging
-crates/shell        trigger (edge_at), win32 (курсор, экран), tray (иконка и меню), icons (иконки приложений)
+crates/shell        trigger (edge_at), win32, tray (иконка и меню), icons (иконки), launch (ShellExecute)
 crates/ai           реестр инструментов + политика подтверждений
 crates/integrations трейт MailSource, демо-источник, soroka (чтение `soroka.db`)
 crates/ui           Slint-окна, триггер-воркер, клик-сквозь, оверлей, drag.rs, action.rs
@@ -92,12 +94,14 @@ cargo run -p posdesktop -- --overlay     # оверлей
 .\target\release\posdesktop.exe --snapshot          # проверка темы (цвета)
 .\target\release\posdesktop.exe --workspace-snapshot # проверка прозрачности
 .\target\release\posdesktop.exe --mail               # счётчики почты из Soroka
+.\target\release\posdesktop.exe --launch "Word"      # запуск приложения по названию
 .\target\release\posdesktop.exe --panel-snapshot out.bmp # снимок панели приложений
 .\target\release\posdesktop.exe --tiles-snapshot out.bmp # снимок плиток рабочей области
 .\target\release\posdesktop.exe --clickthrough-test  # проверка клик-сквозь
 .\scripts\drag-check.ps1   # сквозная проверка перетаскивания (свой APPDATA)
 .\scripts\tray-check.ps1   # трей, второй экземпляр, выход
 .\scripts\hotkeys-check.ps1 # горячие клавиши панелей
+.\scripts\click-check.ps1  # клик по плитке запускает приложение
 .\scripts\build.ps1        # fmt + clippy + tests + release + dist
 .\scripts\release.ps1      # + версия, MSI, коммит, push
 ```
@@ -167,7 +171,13 @@ cargo run -p posdesktop -- --overlay     # оверлей
 25. **SQLite читается через системную `winsqlite3.dll`** (`#[link(name = "winsqlite3")]`,
     импорт-библиотека есть в Windows SDK). Новых зависимостей не добавляли; база
     открывается только на чтение, иначе Soroka с WAL могла бы блокироваться.
-26. **Новая иконка трея уходит в «скрытые значки»** Windows — это поведение ОС,
+26. **Клик после перетаскивания не должен запускать приложение**: после отпускания
+    300 мс клики по плиткам игнорируются (`drag_ended`), иначе любое перемещение
+    открывало бы программу.
+27. **Синтетические клики в проверках конфликтуют с живой мышью**: перед прогоном
+    скрипты убивают чужие экземпляры, а `WindowFromPoint` подтверждает, что точка
+    захвата принадлежит окну оболочки, иначе проверка падает с понятным текстом.
+28. **Новая иконка трея уходит в «скрытые значки»** Windows — это поведение ОС,
     пользователь закрепляет её в параметрах панели задач. Проверять наличие
     иконки через `Shell_NotifyIconGetRect` в этом состоянии нельзя (E_INVALIDARG):
     `scripts/tray-check.ps1` дергает окно трея теми же сообщениями, что и Проводник.

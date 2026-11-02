@@ -1,6 +1,7 @@
 //! Логика оболочки: триггеры у краёв экрана и Win32-примитивы.
 
 pub mod icons;
+pub mod launch;
 pub mod tray;
 pub mod trigger;
 pub mod win32;

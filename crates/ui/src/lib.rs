@@ -534,6 +534,22 @@ fn hide_dock<T: slint::ComponentHandle + 'static>(
     }
 }
 
+/// Запуск приложения по названию из каталога «Пуск» (CLI и будущий инструмент ИИ).
+pub fn run_launch(name: &str) -> bool {
+    let Some(path) = posdesktop_shell::icons::find_shortcut(name) else {
+        log::warn!("запуск {name}: ярлык в меню «Пуск» не найден");
+        println!("ярлык не найден: {name}");
+        return false;
+    };
+    if posdesktop_shell::launch::open(&path) {
+        println!("запуск {name}: {}", path.display());
+        true
+    } else {
+        println!("ShellExecute не открыл {}", path.display());
+        false
+    }
+}
+
 /// Счётчик почты из Soroka; если базы нет — прочерк.
 fn mail_text() -> String {
     let Some(mail) = posdesktop_integrations::SorokaMail::open() else {
