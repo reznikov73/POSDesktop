@@ -143,15 +143,19 @@ cargo run -p posdesktop -- --overlay     # оверлей
     иконки через `Shell_NotifyIconGetRect` в этом состоянии нельзя (E_INVALIDARG):
     `scripts/tray-check.ps1` дергает окно трея теми же сообщениями, что и Проводник.
 
-## 8. Публикация (заблокировано)
+## 8. Публикация
 
-`gh` не установлен, репозитория `reznikov73/POSDesktop` нет, авторизации нет.
-Remote уже прописан. Действия владельца:
+Репозиторий `https://github.com/reznikov73/POSDesktop` существует, remote
+прописан, вход через Git Credential Manager уже сохранён — `git push` работает
+без запросов. Проверено 2026-11-02: ветка `main` запушена.
 
-1. создать пустой репозиторий на github.com/new (Public, без README);
-2. `git push -u origin main` из `E:\Work\VSC\POSDesktop` — Git Credential
-   Manager попросит вход;
-   либо поставить GitHub CLI, `gh auth login`, затем `.\scripts\publish.ps1`.
+```powershell
+git push            # из E:\Work\VSC\POSDesktop, апстрим уже настроен
+```
+
+Чего нет: `gh` не установлен, поэтому GitHub Releases и автосоздание тегов
+(`scripts/publish.ps1`, `release.ps1 -Release`) пока недоступны. MSI тоже
+заблокирован — нет `cargo-wix` и WiX.
 
 ## 9. Дорожная карта (по приоритету)
 
