@@ -1,9 +1,11 @@
 //! Ядро POS Desktop: модель раскладки, хранилище, логирование.
 
+pub mod history;
 pub mod layout;
 pub mod logging;
 pub mod store;
 
+pub use history::{History, HISTORY_LIMIT};
 pub use layout::{
     snap_to_grid, Density, Edge, Group, Layout, LayoutError, MoveError, Object, ObjectKind, Panel,
     PanelMode, PanelType, Rect, Screen, GRID_STEP, LAYOUT_VERSION, TILE_UNIT,

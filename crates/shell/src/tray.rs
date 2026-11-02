@@ -9,6 +9,10 @@
 pub enum TrayCommand {
     /// Показать или скрыть панель приложений.
     TogglePanels,
+    /// Отменить последнее перемещение плитки.
+    Undo,
+    /// Повторить отменённое перемещение.
+    Redo,
     /// Открыть каталог логов.
     OpenLogs,
     /// Завершить работу оболочки.
@@ -68,7 +72,9 @@ mod imp {
 
     const MENU_TOGGLE: usize = 1;
     const MENU_LOGS: usize = 2;
-    const MENU_QUIT: usize = 3;
+    const MENU_UNDO: usize = 3;
+    const MENU_REDO: usize = 4;
+    const MENU_QUIT: usize = 5;
 
     const ID: u32 = 1;
     const TIP: &str = "POS Desktop";
@@ -295,9 +301,13 @@ mod imp {
         }
         let toggle = wide("Показать / скрыть панели");
         let logs = wide("Логи");
+        let undo = wide("Отменить перемещение");
+        let redo = wide("Повторить перемещение");
         let quit = wide("Выход");
         AppendMenuW(menu, MF_STRING, MENU_TOGGLE, toggle.as_ptr());
         AppendMenuW(menu, MF_STRING, MENU_LOGS, logs.as_ptr());
+        AppendMenuW(menu, MF_STRING, MENU_UNDO, undo.as_ptr());
+        AppendMenuW(menu, MF_STRING, MENU_REDO, redo.as_ptr());
         AppendMenuW(menu, MF_STRING, MENU_QUIT, quit.as_ptr());
 
         let mut point = Point { x: 0, y: 0 };
@@ -318,6 +328,8 @@ mod imp {
         match command as usize {
             MENU_TOGGLE => dispatch(data, TrayCommand::TogglePanels),
             MENU_LOGS => dispatch(data, TrayCommand::OpenLogs),
+            MENU_UNDO => dispatch(data, TrayCommand::Undo),
+            MENU_REDO => dispatch(data, TrayCommand::Redo),
             MENU_QUIT => dispatch(data, TrayCommand::Quit),
             _ => {}
         }

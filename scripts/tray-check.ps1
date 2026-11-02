@@ -116,7 +116,7 @@ if (Wait-Log 'открываю логи') {
 
 # 4. Третий пункт завершает оболочку.
 Open-TrayMenu $tray
-[System.Windows.Forms.SendKeys]::SendWait('{DOWN}{DOWN}{DOWN}{ENTER}')
+[System.Windows.Forms.SendKeys]::SendWait('{DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{ENTER}')
 Start-Sleep -Seconds 2
 $left = (Get-Process posdesktop -ErrorAction SilentlyContinue | Measure-Object).Count
 if ($left -eq 0) {

@@ -5,7 +5,7 @@
 //! опрашиваются через Win32: окно рабочей области создаётся с
 //! `WS_EX_NOACTIVATE`, и полагаться на поток событий указателя от winit нельзя.
 
-use posdesktop_core::{save, Layout, Object, Rect};
+use posdesktop_core::{save, History, Layout, Object, Rect};
 use posdesktop_shell::win32;
 use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
 use std::cell::RefCell;
@@ -32,6 +32,8 @@ pub(crate) struct Workspace {
     screen_key: String,
     model: Rc<VecModel<Tile>>,
     drag: Option<Drag>,
+    /// Откат и повтор перемещений (ТЗ §6.3).
+    history: History,
     /// Таймер кадров; в покое тикает редко.
     timer: Timer,
 }
@@ -67,6 +69,7 @@ pub(crate) fn install(
         screen_key,
         model,
         drag: None,
+        history: History::default(),
         timer: Timer::default(),
     }));
 
@@ -145,6 +148,38 @@ impl Workspace {
             Ok(()) => log::info!("layout.json сохранён: {}", self.path.display()),
             Err(err) => log::error!("не удалось сохранить layout.json: {err}"),
         }
+    }
+
+    /// Откат последнего перемещения.
+    pub(crate) fn undo(&mut self, ui: &WorkspaceWindow) -> bool {
+        let Some(previous) = self.history.undo(&self.layout) else {
+            log::info!("отменять нечего");
+            return false;
+        };
+        self.layout = previous;
+        self.apply(ui);
+        log::info!("перемещение отменено");
+        true
+    }
+
+    /// Повтор отменённого перемещения.
+    pub(crate) fn redo(&mut self, ui: &WorkspaceWindow) -> bool {
+        let Some(next) = self.history.redo(&self.layout) else {
+            log::info!("повторять нечего");
+            return false;
+        };
+        self.layout = next;
+        self.apply(ui);
+        log::info!("перемещение повторено");
+        true
+    }
+
+    /// Приводит окно и модель к текущей раскладке.
+    fn apply(&mut self, ui: &WorkspaceWindow) {
+        let tiles = screen_tiles(&self.layout, &self.screen_key);
+        self.model.set_vec(tiles);
+        self.persist();
+        self.refresh(ui);
     }
 
     /// Пересчитывает окно и зоны клик-сквозь после перетаскивания.
@@ -276,6 +311,7 @@ impl Workspace {
             return;
         };
         // Позицию берём по курсору: модель могла отстать на кадр.
+        let before = self.layout.clone();
         let (x, y) = match win32::cursor_pos() {
             Some((cursor_x, cursor_y)) => {
                 let scale = ui.window().scale_factor().max(0.5);
@@ -297,6 +333,9 @@ impl Workspace {
                 tile.y = rect.y as f32;
                 self.model.set_row_data(index, tile);
                 log::info!("плитка {} встала в ({}, {})", drag.id, rect.x, rect.y);
+                if rect != drag.start {
+                    self.history.record(&before);
+                }
                 self.persist();
             }
             Err(err) => {

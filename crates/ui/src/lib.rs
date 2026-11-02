@@ -2,6 +2,8 @@
 
 use posdesktop_core::{Edge, Layout};
 use posdesktop_shell::{edge_at, win32, ScreenRect, TriggerConfig};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -125,7 +127,14 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
 
     let panel_state = Arc::new(PanelState::new());
     // Трей и второй экземпляр управляют панелью через общий обработчик.
-    let _tray = install_actions(&apps, &status, &services, panel_state.clone());
+    let _tray = install_actions(
+        &apps,
+        &status,
+        &services,
+        workspace_state.clone(),
+        &workspace,
+        panel_state.clone(),
+    );
     spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
     spawn_hotkey_worker();
 
@@ -426,9 +435,12 @@ fn install_actions(
     apps: &AppWindow,
     status: &StatusBar,
     services: &ServicesBar,
+    workspace: Rc<RefCell<drag::Workspace>>,
+    workspace_ui: &WorkspaceWindow,
     state: Arc<PanelState>,
 ) -> Option<posdesktop_shell::TrayHandle> {
     let weak = apps.as_weak();
+    let workspace_weak = workspace_ui.as_weak();
     let status_weak = status.as_weak();
     let services_weak = services.as_weak();
     let status_visible = std::cell::Cell::new(true);
@@ -453,6 +465,16 @@ fn install_actions(
             hide_dock(&services_weak, &services_visible);
             log::info!("все панели свёрнуты");
         }
+        action::Action::Undo => {
+            if let Some(ui) = workspace_weak.upgrade() {
+                workspace.borrow_mut().undo(&ui);
+            }
+        }
+        action::Action::Redo => {
+            if let Some(ui) = workspace_weak.upgrade() {
+                workspace.borrow_mut().redo(&ui);
+            }
+        }
         action::Action::OpenLogs => open_logs_folder(),
         action::Action::Quit => {
             log::info!("выход по команде из трея");
@@ -464,6 +486,8 @@ fn install_actions(
         use posdesktop_shell::TrayCommand;
         let action = match command {
             TrayCommand::TogglePanels => action::Action::TogglePanels,
+            TrayCommand::Undo => action::Action::Undo,
+            TrayCommand::Redo => action::Action::Redo,
             TrayCommand::OpenLogs => action::Action::OpenLogs,
             TrayCommand::Quit => action::Action::Quit,
         };
@@ -620,11 +644,13 @@ fn spawn_hotkey_worker() {
         const WM_HOTKEY: u32 = 0x0312;
 
         let base = MOD_CONTROL | MOD_ALT | MOD_NOREPEAT;
-        let specs: [(i32, u32, &str, action::Action); 4] = [
+        let specs: [(i32, u32, &str, action::Action); 6] = [
             (1, 0x31, "Ctrl+Alt+1", action::Action::TogglePanels),
             (3, 0x33, "Ctrl+Alt+3", action::Action::ToggleStatus),
             (4, 0x34, "Ctrl+Alt+4", action::Action::ToggleServices),
             (5, 0x1B, "Ctrl+Alt+Esc", action::Action::HideAll),
+            (6, 0x5A, "Ctrl+Alt+Z", action::Action::Undo),
+            (7, 0x59, "Ctrl+Alt+Y", action::Action::Redo),
         ];
 
         let mut registered: Vec<(i32, action::Action)> = Vec::new();
