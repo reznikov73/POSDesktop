@@ -20,16 +20,26 @@ const POLL_MS: u64 = 33;
 
 pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     let screen = win32::primary_screen();
-    log::info!("экран {}x{}", screen.w, screen.h);
+    // Панели док-режима живут в рабочей области: иначе нижняя уезжает под панель задач.
+    let work = win32::primary_work_area();
+    log::info!(
+        "экран {}x{}, рабочая область {}x{} в ({}, {})",
+        screen.w,
+        screen.h,
+        work.w,
+        work.h,
+        work.x,
+        work.y
+    );
 
     let apps = AppWindow::new()?;
-    apps.set_win_height(screen.h as f32);
+    apps.set_win_height(work.h as f32);
 
     let status = StatusBar::new()?;
-    status.set_bar_width(screen.w as f32);
+    status.set_bar_width(work.w as f32);
 
     let services = ServicesBar::new()?;
-    services.set_bar_width(screen.w as f32);
+    services.set_bar_width(work.w as f32);
 
     apps.show()?;
     status.show()?;
@@ -39,13 +49,14 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
     let panels = (apps.as_weak(), status.as_weak(), services.as_weak());
 
     apps.window()
-        .set_position(slint::PhysicalPosition::new(-PANEL_WIDTH, 0));
+        .set_position(slint::PhysicalPosition::new(work.x - PANEL_WIDTH, work.y));
     status
         .window()
-        .set_position(slint::PhysicalPosition::new(0, 0));
-    services
-        .window()
-        .set_position(slint::PhysicalPosition::new(0, screen.h - SERVICES_HEIGHT));
+        .set_position(slint::PhysicalPosition::new(work.x, work.y));
+    services.window().set_position(slint::PhysicalPosition::new(
+        work.x,
+        work.y + work.h - SERVICES_HEIGHT,
+    ));
 
     let layout_path = posdesktop_core::default_layout_path();
     let existed = layout_path.exists();
@@ -175,6 +186,79 @@ fn tiles_model(layout: &Layout) -> Vec<Tile> {
         .flat_map(|screen| screen.objects.iter())
         .map(drag::tile_of)
         .collect()
+}
+
+/// Снапшот панели приложений в BMP: проверка вёрстки без окон поверх.
+pub fn run_panel_snapshot(path: &std::path::Path) -> Result<(), slint::PlatformError> {
+    let work = win32::primary_work_area();
+    let window = AppWindow::new()?;
+    window.set_win_height(work.h as f32);
+
+    let weak = window.as_weak();
+    let path = path.to_path_buf();
+    slint::Timer::single_shot(Duration::from_millis(900), move || {
+        if let Some(component) = weak.upgrade() {
+            match component.window().take_snapshot() {
+                Ok(buffer) => {
+                    let result =
+                        write_bmp(&path, buffer.width(), buffer.height(), buffer.as_slice());
+                    match result {
+                        Ok(()) => println!(
+                            "panel snapshot: {} ({}x{})",
+                            path.display(),
+                            buffer.width(),
+                            buffer.height()
+                        ),
+                        Err(err) => eprintln!("не удалось записать {}: {err}", path.display()),
+                    }
+                }
+                Err(err) => eprintln!("snapshot error: {err}"),
+            }
+        }
+        let _ = slint::quit_event_loop();
+    });
+
+    window.run()
+}
+
+/// Пишет BMP 24 бит: свой формат без внешних крейтов, читается любым просмотрщиком.
+fn write_bmp(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    pixels: &[slint::Rgba8Pixel],
+) -> std::io::Result<()> {
+    let row = (width * 3 + 3) & !3;
+    let image_size = row * height;
+    let mut out = Vec::with_capacity(54 + image_size as usize);
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(54 + image_size).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(height as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&24u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&image_size.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&2835u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+
+    for y in (0..height).rev() {
+        let start = (y * width) as usize;
+        let mut line = Vec::with_capacity(row as usize);
+        for pixel in &pixels[start..start + width as usize] {
+            line.push(pixel.b);
+            line.push(pixel.g);
+            line.push(pixel.r);
+        }
+        line.resize(row as usize, 0);
+        out.extend_from_slice(&line);
+    }
+    std::fs::write(path, out)
 }
 
 /// Снапшот рабочей области: проверяет прозрачность фона.

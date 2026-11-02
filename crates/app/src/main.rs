@@ -38,6 +38,14 @@ fn main() {
         }
         Some("--clickthrough-test") => posdesktop_ui::run_clickthrough_test()
             .map_err(|err| format!("clickthrough-тест не удался: {err}")),
+        Some("--panel-snapshot") => {
+            let path = args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| "panel.bmp".to_string());
+            posdesktop_ui::run_panel_snapshot(std::path::Path::new(&path))
+                .map_err(|err| format!("снапшот панели не удался: {err}"))
+        }
         Some("--workspace-snapshot") => posdesktop_ui::run_workspace_snapshot()
             .map_err(|err| format!("workspace-снапшот не удался: {err}")),
         Some("--logs") => {
@@ -109,6 +117,7 @@ fn help() {
     println!("OPTIONS:");
     println!("        --overlay            окно-оверлей: поверх всех, без фокуса");
     println!("        --snapshot           снапшот панели и статистика цвета");
+    println!("        --panel-snapshot [файл] снапшот панели приложений в BMP");
     println!("        --workspace-snapshot снапшот рабочей области (прозрачность)");
     println!("        --clickthrough-test  проверить клик-сквозь");
     println!("        --logs               показать путь к логам и открыть папку");

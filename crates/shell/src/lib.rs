@@ -6,4 +6,4 @@ pub mod win32;
 
 pub use tray::{TrayCommand, TrayHandle};
 pub use trigger::{edge_at, ScreenRect, TriggerConfig};
-pub use win32::{cursor_pos, primary_screen};
+pub use win32::{cursor_pos, primary_screen, primary_work_area};

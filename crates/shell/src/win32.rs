@@ -35,6 +35,48 @@ pub fn cursor_pos() -> Option<(i32, i32)> {
     None
 }
 
+/// Рабочая область основного монитора — экран без панели задач.
+#[cfg(windows)]
+pub fn primary_work_area() -> ScreenRect {
+    #[repr(C)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SystemParametersInfoW(action: u32, param: u32, data: *mut Rect, win_ini: u32) -> i32;
+    }
+
+    const SPI_GETWORKAREA: u32 = 0x0030;
+
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut rect, 0) };
+    if ok == 0 {
+        log::warn!("SPI_GETWORKAREA не сработал, беру весь экран");
+        return primary_screen();
+    }
+    ScreenRect {
+        x: rect.left,
+        y: rect.top,
+        w: rect.right - rect.left,
+        h: rect.bottom - rect.top,
+    }
+}
+
+#[cfg(not(windows))]
+pub fn primary_work_area() -> ScreenRect {
+    primary_screen()
+}
+
 /// Нажата ли левая кнопка мыши.
 #[cfg(windows)]
 pub fn left_button_down() -> bool {
