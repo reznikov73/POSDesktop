@@ -23,6 +23,8 @@ const IDLE_MS: u64 = 1000;
 const WINDOW_MARGIN: i32 = 16;
 /// Минимальный размер окна рабочей области, логические px.
 const MIN_WINDOW: (i32, i32) = (320, 240);
+/// Допустимый сдвиг курсора, при котором нажатие считается кликом.
+const CLICK_SLOP: f32 = 3.0;
 
 /// Рабочая область: раскладка — единственный источник истины (ТЗ §4.2).
 pub(crate) struct Workspace {
@@ -48,6 +50,10 @@ struct Drag {
     grab: (f32, f32),
     /// Прямоугольник на момент нажатия — для отката и габаритов окна.
     start: Rect,
+    /// Курсор в момент нажатия, логические px: отличает клик от перетаскивания.
+    press: (f32, f32),
+    /// Масштаб окна для перевода физических координат курсора.
+    scale: f32,
 }
 
 /// Готовит модель плиток и обработчики перетаскивания.
@@ -160,11 +166,58 @@ impl Workspace {
         }
     }
 
+    /// Бросок файлов из Проводника: на плитку — добавляем внутрь, мимо — новая плитка.
+    pub(crate) fn drop_items(
+        &mut self,
+        ui: &WorkspaceWindow,
+        x: f32,
+        y: f32,
+        paths: Vec<std::path::PathBuf>,
+    ) {
+        let (x, y) = (x.round() as i32, y.round() as i32);
+        let Some(screen) = self.layout.monitors.get_mut(&self.screen_key) else {
+            return;
+        };
+
+        let mut added = 0;
+        for path in &paths {
+            let app = path.to_string_lossy().to_string();
+            if screen.add_app_at(x, y, &app).is_some() {
+                added += 1;
+                continue;
+            }
+            let id = next_drop_id(screen);
+            if screen.add_app(&id, &app, x, y).is_some() {
+                added += 1;
+            }
+        }
+
+        if added == 0 {
+            log::warn!("бросок: нечего добавить");
+            return;
+        }
+        log::info!("бросок: добавлено объектов {added}");
+        self.apply(ui);
+    }
+
     /// Клик по плитке: запуск приложения из каталога «Пуск».
     ///
     /// Сразу после перетаскивания клик игнорируется — иначе отпускание плитки
     /// запускало бы приложение.
     pub(crate) fn activate(&self, index: i32) {
+        // Slint присылает clicked раньше, чем кадр finish завершает перетаскивание,
+        // поэтому смотрим, сдвинулся ли курсор с момента нажатия.
+        if let Some(drag) = self.drag.as_ref() {
+            let Some((cursor_x, cursor_y)) = win32::cursor_pos() else {
+                return;
+            };
+            let (local_x, local_y) = (cursor_x as f32 / drag.scale, cursor_y as f32 / drag.scale);
+            if (local_x - drag.press.0).abs() > CLICK_SLOP
+                || (local_y - drag.press.1).abs() > CLICK_SLOP
+            {
+                return;
+            }
+        }
         if self
             .drag_ended
             .is_some_and(|ended| ended.elapsed() < Duration::from_millis(300))
@@ -259,6 +312,8 @@ fn begin(state: &Rc<RefCell<Workspace>>, ui: &WorkspaceWindow, index: i32) {
         id: id.clone(),
         grab,
         start: rect,
+        press: (local_x, local_y),
+        scale,
     });
     ui.set_drag_index(index as i32);
     ui.set_ghost_visible(false);
@@ -398,9 +453,26 @@ impl Workspace {
     }
 }
 
-/// Запускает приложение по названию: ищем ярлык в меню «Пуск».
+/// Свободный идентификатор для плитки, созданной броском.
+fn next_drop_id(screen: &posdesktop_core::Screen) -> String {
+    for number in 1..=999 {
+        let id = format!("drop{number}");
+        if screen.index_of(&id).is_none() {
+            return id;
+        }
+    }
+    "drop".to_string()
+}
+
+/// Запускает приложение по названию или пути к ярлыку.
 fn launch_app(name: &str) {
-    let Some(path) = posdesktop_shell::icons::find_shortcut(name) else {
+    let direct = std::path::Path::new(name);
+    let path = if direct.is_file() {
+        Some(direct.to_path_buf())
+    } else {
+        posdesktop_shell::icons::find_shortcut(name)
+    };
+    let Some(path) = path else {
         log::warn!("запуск {name}: ярлык в меню «Пуск» не найден");
         return;
     };
@@ -423,17 +495,22 @@ pub(crate) fn screen_tiles(layout: &Layout, screen_key: &str) -> Vec<Tile> {
 /// Плитка Slint из объекта раскладки.
 pub(crate) fn tile_of(object: &Object) -> Tile {
     let label = object.label();
-    let icon = posdesktop_shell::icons::icon_for_app(label, 32);
-    let has_icon = icon.is_some();
-    let image = icon
-        .map(|pixels| {
-            slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
-                &pixels.rgba,
-                pixels.width,
-                pixels.height,
-            ))
-        })
-        .unwrap_or_default();
+    let mut icons: Vec<slint::Image> = Vec::new();
+    if let Some(image) = icon_image(posdesktop_shell::icons::icon_for_app(label, 32)) {
+        icons.push(image);
+    }
+    for extra in &object.apps {
+        if icons.len() >= 4 {
+            break;
+        }
+        let pixels = posdesktop_shell::icons::load_app_icon(std::path::Path::new(extra), 32);
+        if let Some(image) = icon_image(pixels) {
+            icons.push(image);
+        }
+    }
+
+    let first = icons.first().cloned().unwrap_or_default();
+    let has_icon = !icons.is_empty();
     Tile {
         x: object.rect.x as f32,
         y: object.rect.y as f32,
@@ -441,9 +518,21 @@ pub(crate) fn tile_of(object: &Object) -> Tile {
         h: object.rect.h as f32,
         label: label.into(),
         badge: badge_of(label).into(),
-        icon: image,
+        icon: first,
         has_icon,
+        icons: slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(icons))),
     }
+}
+
+/// Пиксели Shell превращаем в картинку Slint.
+fn icon_image(pixels: Option<posdesktop_shell::IconPixels>) -> Option<slint::Image> {
+    pixels.map(|pixels| {
+        slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+            &pixels.rgba,
+            pixels.width,
+            pixels.height,
+        ))
+    })
 }
 
 /// Монограмма плитки: первая буква названия, пока нет иконок из Shell.

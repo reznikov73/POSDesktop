@@ -4,7 +4,7 @@
 //! чужих потоков приходят через [`post`] и попадают в цикл событий Slint.
 
 /// Что просит сделать пользователь.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Action {
     /// Показать панель приложений (второй экземпляр просит показать оболочку).
     ShowPanel,
@@ -16,6 +16,12 @@ pub(crate) enum Action {
     ToggleServices,
     /// Свернуть все панели (Ctrl+Alt+Esc).
     HideAll,
+    /// На рабочую область бросили файлы или ярлыки (координаты — физические px).
+    Drop {
+        x: i32,
+        y: i32,
+        paths: Vec<std::path::PathBuf>,
+    },
     /// Отменить последнее перемещение плитки.
     Undo,
     /// Повторить отменённое перемещение.

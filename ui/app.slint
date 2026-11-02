@@ -17,6 +17,8 @@ export struct Tile {
     badge: string,
     icon: image,
     has-icon: bool,
+    // Иконки плитки-папки: до четырёх, как в сетке Android.
+    icons: [image],
 }
 
 export component WorkspaceWindow inherits Window {
@@ -66,9 +68,21 @@ export component WorkspaceWindow inherits Window {
         border-width: root.drag-index == idx ? 2px : 1px;
         border-color: root.drag-index == idx ? #0c7f68 : #dfe3e5;
 
+        // Папка: сетка 2×2 из иконок вложенных приложений.
+        if (tile.icons.length > 1) : Rectangle {
+            for icon[i] in tile.icons : Image {
+                source: icon;
+                x: (parent.width - 67px) / 2 + Math.mod(i, 2) * 37px;
+                y: (parent.height - 67px) / 2 + Math.floor(i / 2) * 37px;
+                width: 30px;
+                height: 30px;
+                image-fit: contain;
+            }
+        }
+
         // Абсолютная раскладка: плитка не должна зависеть от растяжения layout.
         Image {
-            visible: tile.has-icon;
+            visible: tile.has-icon && tile.icons.length <= 1;
             source: tile.icon;
             x: (parent.width - 34px) / 2;
             y: 12px;
@@ -99,6 +113,7 @@ export component WorkspaceWindow inherits Window {
         }
 
         Text {
+            visible: tile.icons.length <= 1;
             text: tile.label;
             x: 6px;
             y: 52px;

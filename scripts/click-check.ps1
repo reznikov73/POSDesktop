@@ -25,6 +25,20 @@ public class ClickCheck {
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, UIntPtr e);
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
 
+    public static void Drag(int fromX, int fromY, int toX, int toY, int steps) {
+        SetCursorPos(fromX, fromY);
+        System.Threading.Thread.Sleep(150);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(100);
+        for (int i = 1; i <= steps; i++) {
+            SetCursorPos(fromX + (toX - fromX) * i / steps, fromY + (toY - fromY) * i / steps);
+            System.Threading.Thread.Sleep(20);
+        }
+        System.Threading.Thread.Sleep(150);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(600);
+    }
+
     public static IntPtr Find(uint pid, string title) {
         IntPtr found = IntPtr.Zero;
         EnumWindows(delegate(IntPtr h, IntPtr p) {
@@ -119,6 +133,22 @@ try {
     "после клика: плитка в ($($after.x),$($after.y))"
     if ($after.x -ne $tile.x -or $after.y -ne $tile.y) {
         'ОШИБКА: клик сдвинул плитку'
+        $failures++
+    }
+
+    # Перетаскивание не должно запускать приложение внутри плитки.
+    $launches = (Get-Content -LiteralPath $log -Encoding UTF8 | Select-String 'запуск POS Test').Count
+    [ClickCheck]::Drag($x, $y, $x + 120, $y + 60, 16)
+    Start-Sleep -Milliseconds 900
+    $launchesAfter = (Get-Content -LiteralPath $log -Encoding UTF8 | Select-String 'запуск POS Test').Count
+    $moved = (Get-Content -LiteralPath $layout -Raw -Encoding UTF8 | ConvertFrom-Json).monitors.primary.objects[0]
+    "после перетаскивания: плитка в ($($moved.x),$($moved.y)), запусков было $launches, стало $launchesAfter"
+    if ($moved.x -eq $tile.x -and $moved.y -eq $tile.y) {
+        'ОШИБКА: плитка не переместилась'
+        $failures++
+    }
+    if ($launchesAfter -ne $launches) {
+        'ОШИБКА: перетаскивание запустило приложение'
         $failures++
     }
 

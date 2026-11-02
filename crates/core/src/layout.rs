@@ -150,6 +150,9 @@ pub struct Object {
     pub rect: Rect,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// Дополнительные приложения плитки-папки (пути ярлыков или exe).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub apps: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub widget: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -267,6 +270,49 @@ impl Screen {
         Ok(rect)
     }
 
+    /// Добавляет приложение в плитку, на которую указывает точка.
+    ///
+    /// Возвращает прямоугольник плитки, если точка попала в объект.
+    pub fn add_app_at(&mut self, x: i32, y: i32, app: &str) -> Option<Rect> {
+        let index = self
+            .objects
+            .iter()
+            .position(|object| object.rect.contains_point(x, y))?;
+        let object = &mut self.objects[index];
+        if !object.apps.iter().any(|existing| existing == app) {
+            object.apps.push(app.to_string());
+        }
+        Some(object.rect)
+    }
+
+    /// Создаёт плитку приложения в ближайшей свободной позиции.
+    pub fn add_app(&mut self, id: &str, app: &str, x: i32, y: i32) -> Option<Rect> {
+        if self.index_of(id).is_some() {
+            return None;
+        }
+        let target = Rect {
+            x: snap_to_grid(x.max(0)),
+            y: snap_to_grid(y.max(0)),
+            w: TILE_UNIT,
+            h: TILE_UNIT,
+        };
+        let rect = if self.is_free(self.objects.len(), &target) {
+            target
+        } else {
+            self.nearest_free(self.objects.len(), target)?
+        };
+        self.objects.push(Object {
+            id: id.to_string(),
+            kind: ObjectKind::App,
+            rect,
+            app: Some(app.to_string()),
+            apps: Vec::new(),
+            widget: None,
+            group_id: self.group_at(rect),
+        });
+        Some(rect)
+    }
+
     /// Свободна ли позиция: остальные объекты не пересекаются.
     fn is_free(&self, index: usize, rect: &Rect) -> bool {
         self.objects
@@ -372,6 +418,7 @@ impl Screen {
                         h: 88,
                     },
                     app: None,
+                    apps: Vec::new(),
                     widget: Some("mail".into()),
                     group_id: None,
                 },
@@ -385,6 +432,7 @@ impl Screen {
                         h: 88,
                     },
                     app: None,
+                    apps: Vec::new(),
                     widget: Some("weather".into()),
                     group_id: None,
                 },
@@ -398,6 +446,7 @@ impl Screen {
                         h: 88,
                     },
                     app: Some("1С".into()),
+                    apps: Vec::new(),
                     widget: None,
                     group_id: Some("office".into()),
                 },
@@ -411,6 +460,7 @@ impl Screen {
                         h: 88,
                     },
                     app: Some("Word".into()),
+                    apps: Vec::new(),
                     widget: None,
                     group_id: Some("office".into()),
                 },
@@ -424,6 +474,7 @@ impl Screen {
                         h: 88,
                     },
                     app: Some("Excel".into()),
+                    apps: Vec::new(),
                     widget: None,
                     group_id: Some("office".into()),
                 },
@@ -680,6 +731,39 @@ mod tests {
         let rect = screen.preview_move("mail", 400, 400).expect("preview");
         assert_eq!((rect.x, rect.y), (400, 400));
         assert_eq!(screen, before);
+    }
+
+    #[test]
+    fn dropped_app_lands_in_tile() {
+        let mut screen = Screen::default_screen();
+        let rect = screen
+            .add_app_at(300, 120, "C:\\Shortcuts\\Telegram.lnk")
+            .expect("плитка");
+        assert_eq!((rect.x, rect.y), (200, 96));
+        let tile = &screen.objects[1];
+        assert_eq!(tile.apps.len(), 1);
+
+        // Повторный бросок того же ярлыка не дублирует запись.
+        screen.add_app_at(300, 120, "C:\\Shortcuts\\Telegram.lnk");
+        assert_eq!(screen.objects[1].apps.len(), 1);
+        assert_eq!(screen.validate(), Ok(()));
+    }
+
+    #[test]
+    fn dropped_app_creates_new_tile_in_free_spot() {
+        let mut screen = Screen::default_screen();
+        let rect = screen
+            .add_app("dropped", "C:\\Shortcuts\\Zoom.lnk", 400, 400)
+            .expect("плитка");
+        assert_eq!((rect.w, rect.h), (TILE_UNIT, TILE_UNIT));
+        assert!(rect.x % GRID_STEP == 0 && rect.y % GRID_STEP == 0);
+        assert_eq!(screen.validate(), Ok(()));
+    }
+
+    #[test]
+    fn duplicate_tile_id_is_rejected() {
+        let mut screen = Screen::default_screen();
+        assert_eq!(screen.add_app("mail", "C:\\x.lnk", 400, 400), None);
     }
 
     #[test]

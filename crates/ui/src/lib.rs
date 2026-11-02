@@ -102,6 +102,7 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         if let Some(component) = workspace_weak.upgrade() {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
+                accept_dropped_files(hwnd);
                 let rects = state_for_style
                     .borrow()
                     .physical_rects(component.window().scale_factor());
@@ -466,6 +467,14 @@ fn install_actions(
             hide_dock(&services_weak, &services_visible);
             log::info!("все панели свёрнуты");
         }
+        action::Action::Drop { x, y, paths } => {
+            if let Some(ui) = workspace_weak.upgrade() {
+                let scale = ui.window().scale_factor().max(0.5);
+                workspace
+                    .borrow_mut()
+                    .drop_items(&ui, x as f32 / scale, y as f32 / scale, paths);
+            }
+        }
         action::Action::Undo => {
             if let Some(ui) = workspace_weak.upgrade() {
                 workspace.borrow_mut().undo(&ui);
@@ -725,7 +734,7 @@ fn spawn_hotkey_worker() {
             }
             let id = message.w_param as i32;
             if let Some((_, command)) = registered.iter().find(|(hotkey, _)| *hotkey == id) {
-                action::post(*command);
+                action::post(command.clone());
             }
         }
     });
@@ -856,6 +865,44 @@ fn apply_panel_style(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_panel_style(_window: &slint::Window) {}
 
+/// Разрешает бросать файлы на рабочую область.
+#[cfg(windows)]
+fn accept_dropped_files(hwnd: isize) {
+    unsafe {
+        DragAcceptFiles(hwnd, 1);
+    }
+}
+
+/// Достаёт пути из `HDROP` брошенных файлов.
+#[cfg(windows)]
+fn dropped_paths(hdrop: usize) -> Vec<std::path::PathBuf> {
+    use std::ptr;
+
+    let count = unsafe { DragQueryFileW(hdrop as isize, u32::MAX, ptr::null_mut(), 0) };
+    let mut paths = Vec::new();
+    for index in 0..count {
+        let length = unsafe { DragQueryFileW(hdrop as isize, index, ptr::null_mut(), 0) };
+        if length == 0 {
+            continue;
+        }
+        let mut buffer = vec![0u16; length as usize + 1];
+        let written = unsafe {
+            DragQueryFileW(
+                hdrop as isize,
+                index,
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+            )
+        };
+        if written == 0 {
+            continue;
+        }
+        let text = String::from_utf16_lossy(&buffer[..written as usize]);
+        paths.push(std::path::PathBuf::from(text));
+    }
+    paths
+}
+
 /// Подписывается на WM_NCHITTEST: интерактивны только указанные прямоугольники.
 #[cfg(windows)]
 fn install_clickthrough_rects(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
@@ -948,6 +995,16 @@ extern "system" fn subclass_proc(
     const HTTRANSPARENT: isize = -1;
     const HTCLIENT: isize = 1;
 
+    if msg == WM_DROPFILES {
+        let paths = dropped_paths(wparam);
+        if !paths.is_empty() {
+            let (x, y) = win32::cursor_pos().unwrap_or((0, 0));
+            action::dispatch(action::Action::Drop { x, y, paths });
+        }
+        unsafe { DragFinish(wparam as isize) };
+        return 0;
+    }
+
     if msg == WM_NCHITTEST && CLICKTHROUGH.load(Ordering::Relaxed) {
         let x = (lparam & 0xFFFF) as u16 as i16 as i32;
         let y = ((lparam >> 16) & 0xFFFF) as u16 as i16 as i32;
@@ -975,6 +1032,8 @@ const WS_EX_APPWINDOW: isize = 0x0004_0000;
 const WS_EX_NOACTIVATE: isize = 0x0800_0000;
 #[cfg(windows)]
 const HWND_TOPMOST: isize = -1;
+#[cfg(windows)]
+const WM_DROPFILES: u32 = 0x0233;
 #[cfg(windows)]
 const SW_HIDE: i32 = 0;
 #[cfg(windows)]
@@ -1004,6 +1063,9 @@ extern "system" {
     fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
     fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
     fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+    fn DragAcceptFiles(hwnd: isize, accept: i32);
+    fn DragQueryFileW(hdrop: isize, index: u32, buffer: *mut u16, size: u32) -> u32;
+    fn DragFinish(hdrop: isize);
     fn RegisterHotKey(hwnd: isize, id: i32, modifiers: u32, vk: u32) -> i32;
     fn RegisterWindowMessageW(name: *const u16) -> u32;
     fn GetMessageW(
