@@ -13,8 +13,10 @@ export struct Tile {
     w: length,
     h: length,
     label: string,
-    // Монограмма плитки: первая буква названия, пока нет иконок из Shell.
+    // Монограмма плитки — запасной вариант, если иконка не нашлась.
     badge: string,
+    icon: image,
+    has-icon: bool,
 }
 
 export component WorkspaceWindow inherits Window {
@@ -63,36 +65,48 @@ export component WorkspaceWindow inherits Window {
         border-width: root.drag-index == idx ? 2px : 1px;
         border-color: root.drag-index == idx ? #0c7f68 : #dfe3e5;
 
-        VerticalLayout {
-            padding: 10px;
-            spacing: 6px;
-            alignment: center;
+        // Абсолютная раскладка: плитка не должна зависеть от растяжения layout.
+        Image {
+            visible: tile.has-icon;
+            source: tile.icon;
+            x: (parent.width - 34px) / 2;
+            y: 12px;
+            width: 34px;
+            height: 34px;
+            image-fit: contain;
+        }
 
-            Rectangle {
-                width: 34px;
-                height: 34px;
-                border-radius: 10px;
-                background: root.drag-index == idx ? #d9efe8 : #eef1f2;
-
-                Text {
-                    text: tile.badge;
-                    width: 100%;
-                    height: 100%;
-                    color: #0c7f68;
-                    font-size: 15px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
+        Rectangle {
+            visible: !tile.has-icon;
+            x: (parent.width - 34px) / 2;
+            y: 12px;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: root.drag-index == idx ? #d9efe8 : #eef1f2;
 
             Text {
-                text: tile.label;
-                color: #17181a;
-                font-size: 12px;
+                text: tile.badge;
+                width: 100%;
+                height: 100%;
+                color: #0c7f68;
+                font-size: 15px;
+                font-weight: 600;
                 horizontal-alignment: center;
-                overflow: elide;
+                vertical-alignment: center;
             }
+        }
+
+        Text {
+            text: tile.label;
+            x: 6px;
+            y: 52px;
+            width: parent.width - 12px;
+            height: 28px;
+            color: #17181a;
+            font-size: 12px;
+            horizontal-alignment: center;
+            overflow: elide;
         }
 
         TouchArea {

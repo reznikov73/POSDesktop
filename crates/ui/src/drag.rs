@@ -323,6 +323,17 @@ pub(crate) fn screen_tiles(layout: &Layout, screen_key: &str) -> Vec<Tile> {
 /// Плитка Slint из объекта раскладки.
 pub(crate) fn tile_of(object: &Object) -> Tile {
     let label = object.label();
+    let icon = posdesktop_shell::icons::icon_for_app(label, 32);
+    let has_icon = icon.is_some();
+    let image = icon
+        .map(|pixels| {
+            slint::Image::from_rgba8(slint::SharedPixelBuffer::clone_from_slice(
+                &pixels.rgba,
+                pixels.width,
+                pixels.height,
+            ))
+        })
+        .unwrap_or_default();
     Tile {
         x: object.rect.x as f32,
         y: object.rect.y as f32,
@@ -330,6 +341,8 @@ pub(crate) fn tile_of(object: &Object) -> Tile {
         h: object.rect.h as f32,
         label: label.into(),
         badge: badge_of(label).into(),
+        icon: image,
+        has_icon,
     }
 }
 

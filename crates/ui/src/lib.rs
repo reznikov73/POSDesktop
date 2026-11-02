@@ -188,6 +188,46 @@ fn tiles_model(layout: &Layout) -> Vec<Tile> {
         .collect()
 }
 
+/// Снапшот рабочей области в BMP: видны плитки и их иконки.
+pub fn run_tiles_snapshot(path: &std::path::Path) -> Result<(), slint::PlatformError> {
+    let layout = posdesktop_core::load_or_default(&posdesktop_core::default_layout_path());
+    let tiles = tiles_model(&layout);
+    let mut width = 320i32;
+    let mut height = 240i32;
+    for tile in &tiles {
+        width = width.max(tile.x as i32 + tile.w as i32 + 16);
+        height = height.max(tile.y as i32 + tile.h as i32 + 16);
+    }
+
+    let window = WorkspaceWindow::new()?;
+    window.set_ws_width(width as f32);
+    window.set_ws_height(height as f32);
+    window.set_tiles(slint::ModelRc::from(std::rc::Rc::new(
+        slint::VecModel::from(tiles),
+    )));
+
+    let weak = window.as_weak();
+    let path = path.to_path_buf();
+    slint::Timer::single_shot(Duration::from_millis(900), move || {
+        if let Some(component) = weak.upgrade() {
+            if let Ok(buffer) = component.window().take_snapshot() {
+                match write_bmp(&path, buffer.width(), buffer.height(), buffer.as_slice()) {
+                    Ok(()) => println!(
+                        "tiles snapshot: {} ({}x{})",
+                        path.display(),
+                        buffer.width(),
+                        buffer.height()
+                    ),
+                    Err(err) => eprintln!("не удалось записать {}: {err}", path.display()),
+                }
+            }
+        }
+        let _ = slint::quit_event_loop();
+    });
+
+    window.run()
+}
+
 /// Снапшот панели приложений в BMP: проверка вёрстки без окон поверх.
 pub fn run_panel_snapshot(path: &std::path::Path) -> Result<(), slint::PlatformError> {
     let work = win32::primary_work_area();
