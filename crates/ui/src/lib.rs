@@ -39,6 +39,7 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
 
     let status = StatusBar::new()?;
     status.set_bar_width(work.w as f32);
+    status.set_mail_text(mail_text().into());
 
     let services = ServicesBar::new()?;
     services.set_bar_width(work.w as f32);
@@ -530,6 +531,28 @@ fn hide_dock<T: slint::ComponentHandle + 'static>(
     if let Some(window) = weak.upgrade() {
         let _ = window.hide();
         visible.set(false);
+    }
+}
+
+/// Счётчик почты из Soroka; если базы нет — прочерк.
+fn mail_text() -> String {
+    let Some(mail) = posdesktop_integrations::SorokaMail::open() else {
+        log::warn!("почта: Soroka не найдена, показываю прочерк");
+        return "Почта —".to_string();
+    };
+    match mail.read() {
+        Some(summary) => {
+            log::info!(
+                "почта Soroka: {} непрочитанных, всего {}",
+                summary.unread_total(),
+                summary.total
+            );
+            format!("Почта {}", summary.unread_total())
+        }
+        None => {
+            log::warn!("почта: счётчики Soroka не прочитаны, показываю прочерк");
+            "Почта —".to_string()
+        }
     }
 }
 

@@ -1,5 +1,9 @@
 //! Интеграции: источники данных для виджетов.
 
+pub mod soroka;
+
+pub use soroka::{database_path, MailSummary, SorokaMail};
+
 /// Источник счётчиков почты. Реализации: Soroka IPC, Soroka SQLite, IMAP.
 pub trait MailSource {
     fn unread_total(&self) -> u32;

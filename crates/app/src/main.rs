@@ -38,6 +38,10 @@ fn main() {
         }
         Some("--clickthrough-test") => posdesktop_ui::run_clickthrough_test()
             .map_err(|err| format!("clickthrough-тест не удался: {err}")),
+        Some("--mail") => {
+            mail_report();
+            Ok(())
+        }
         Some("--tiles-snapshot") => {
             let path = args
                 .get(1)
@@ -97,6 +101,31 @@ fn run_ui(overlay: bool) -> Result<(), String> {
     posdesktop_ui::run(overlay).map_err(|err| format!("не удалось открыть окно: {err}"))
 }
 
+/// Печатает счётчики почты из Soroka (для проверки без UI).
+fn mail_report() {
+    let Some(mail) = posdesktop_integrations::SorokaMail::open() else {
+        let path = posdesktop_integrations::database_path()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+        println!("Soroka не найдена: {path}");
+        return;
+    };
+    match mail.read() {
+        Some(summary) => {
+            println!("счётчики Soroka: {}", mail.path().display());
+            println!("  непрочитанных: {}", summary.unread_total());
+            for (folder, count) in &summary.unread {
+                println!("  {folder}: {count}");
+            }
+            println!("  всего писем: {}", summary.total);
+            if let Some(sync) = summary.last_sync {
+                println!("  последняя синхронизация: {sync}");
+            }
+        }
+        None => println!("база Soroka есть, но счётчики не прочитаны"),
+    }
+}
+
 fn demo() {
     let mail = DemoMail::new(&[("work", 5), ("personal", 0), ("projects", 7)]);
     println!("mail: {} unread", mail.unread_total());
@@ -127,6 +156,7 @@ fn help() {
     println!("        --snapshot           снапшот панели и статистика цвета");
     println!("        --panel-snapshot [файл] снапшот панели приложений в BMP");
     println!("        --tiles-snapshot [файл] снапшот плиток рабочей области в BMP");
+    println!("        --mail               счётчики почты из Soroka");
     println!("        --workspace-snapshot снапшот рабочей области (прозрачность)");
     println!("        --clickthrough-test  проверить клик-сквозь");
     println!("        --logs               показать путь к логам и открыть папку");

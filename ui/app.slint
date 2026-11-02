@@ -260,6 +260,8 @@ export component StatusBar inherits Window {
     default-font-family: "Segoe UI";
 
     in property <length> bar-width: 1280px;
+    // Счётчик почты: «Почта 12», «Почта 0» или «Почта —», если Soroka недоступна.
+    in property <string> mail-text: "Почта —";
 
     Rectangle {
         background: #fbfcfc;
@@ -288,7 +290,7 @@ export component StatusBar inherits Window {
             VerticalLayout {
                 alignment: center;
                 Text {
-                    text: "Почта 12";
+                    text: mail-text;
                     color: #17181a;
                     font-size: 12px;
                     vertical-alignment: center;
