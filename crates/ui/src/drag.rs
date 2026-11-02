@@ -103,6 +103,31 @@ pub(crate) fn install(
         }
     });
 
+    let drop_api = ui.global::<crate::DropApi>();
+    drop_api.on_files(|data| {
+        let names: Vec<slint::SharedString> = data
+            .file_paths()
+            .map(|paths| {
+                paths
+                    .map(|path| slint::SharedString::from(path.to_string_lossy().as_ref()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        slint::ModelRc::from(Rc::new(VecModel::from(names)))
+    });
+
+    let files_state = Rc::downgrade(&state);
+    let files_ui = ui.as_weak();
+    ui.on_files_dropped(move |paths, x, y| {
+        if let (Some(state), Some(ui)) = (files_state.upgrade(), files_ui.upgrade()) {
+            let files = paths
+                .iter()
+                .map(|path| std::path::PathBuf::from(path.as_str()))
+                .collect();
+            state.borrow_mut().drop_items(&ui, x, y, files);
+        }
+    });
+
     let click_state = Rc::downgrade(&state);
     ui.on_tile_clicked(move |index| {
         if let Some(state) = click_state.upgrade() {

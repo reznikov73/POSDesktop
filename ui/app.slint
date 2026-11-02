@@ -7,6 +7,11 @@ export struct AppGroup {
     apps: [AppItem],
 }
 
+// data-transfer в Slint непрозрачен: пути читает Rust.
+export global DropApi {
+    pure callback files(data-transfer) -> [string];
+}
+
 export struct Tile {
     x: length,
     y: length,
@@ -43,6 +48,20 @@ export component WorkspaceWindow inherits Window {
 
     callback tile-pressed(int);
     callback tile-clicked(int);
+    // Файлы, брошенные из Проводника: пути и точка в координатах окна.
+    callback files-dropped([string], length, length);
+
+    // Slint принимает броски сам (winit держит OLE drop-target),
+    // поэтому файлы ловим элементом DropArea, а не WM_DROPFILES.
+    DropArea {
+        can-drop(event) => {
+            return event.proposed-action;
+        }
+        dropped(event) => {
+            root.files-dropped(DropApi.files(event.data), event.position.x, event.position.y);
+            return event.proposed-action;
+        }
+    }
 
     // Призрак рисуется под плитками и показывает привязанную позицию.
     Rectangle {
