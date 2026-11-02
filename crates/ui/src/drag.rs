@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use crate::action::{self, Action};
 use crate::{Tile, WorkspaceWindow};
 
 /// Период опроса курсора во время перетаскивания — кадр 60 Гц (ТЗ §12, N7).
@@ -234,11 +235,45 @@ impl Workspace {
             return;
         };
 
+        if !object.apps.is_empty() {
+            action::dispatch(Action::OpenFolder(index));
+            return;
+        }
         if let Some(app) = &object.app {
             launch_app(app);
         } else if let Some(widget) = &object.widget {
             log::info!("виджет {widget}: действия пока нет");
         }
+    }
+
+    /// Заголовок и содержимое папки-плитки.
+    pub(crate) fn folder(&self, index: usize) -> Option<(String, Vec<crate::FolderItem>, Rect)> {
+        let screen = self.layout.monitors.get(&self.screen_key)?;
+        let object = screen.objects.get(index)?;
+        if object.apps.is_empty() {
+            return None;
+        }
+        let title = match &object.app {
+            Some(app) if !std::path::Path::new(app).is_file() => app.clone(),
+            _ => "Папка".to_string(),
+        };
+        Some((title, folder_items(object), object.rect))
+    }
+
+    /// Идентификаторы приложений папки — по ним запускаем по клику.
+    pub(crate) fn folder_apps(&self, index: usize) -> Vec<String> {
+        let Some(screen) = self.layout.monitors.get(&self.screen_key) else {
+            return Vec::new();
+        };
+        let Some(object) = screen.objects.get(index) else {
+            return Vec::new();
+        };
+        let mut apps = Vec::new();
+        if let Some(app) = &object.app {
+            apps.push(app.clone());
+        }
+        apps.extend(object.apps.iter().cloned());
+        apps
     }
 
     /// Откат последнего перемещения.
@@ -464,8 +499,44 @@ fn next_drop_id(screen: &posdesktop_core::Screen) -> String {
     "drop".to_string()
 }
 
+/// Содержимое папки: иконки и подписи вложенных приложений.
+pub(crate) fn folder_items(object: &Object) -> Vec<crate::FolderItem> {
+    let mut names = Vec::new();
+    if let Some(app) = &object.app {
+        names.push(app.clone());
+    }
+    names.extend(object.apps.iter().cloned());
+
+    names
+        .into_iter()
+        .map(|name| {
+            let path = std::path::Path::new(&name);
+            let pixels = if path.is_file() {
+                posdesktop_shell::icons::load_app_icon(path, 32)
+            } else {
+                posdesktop_shell::icons::icon_for_app(&name, 32)
+            };
+            let has_icon = pixels.is_some();
+            let image = icon_image(pixels).unwrap_or_default();
+            let label = if path.is_file() {
+                path.file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| name.clone())
+            } else {
+                name.clone()
+            };
+            crate::FolderItem {
+                label: label.clone().into(),
+                icon: image,
+                has_icon,
+                badge: badge_of(&label).into(),
+            }
+        })
+        .collect()
+}
+
 /// Запускает приложение по названию или пути к ярлыку.
-fn launch_app(name: &str) {
+pub(crate) fn launch_app(name: &str) {
     let direct = std::path::Path::new(name);
     let path = if direct.is_file() {
         Some(direct.to_path_buf())

@@ -16,6 +16,8 @@ pub(crate) enum Action {
     ToggleServices,
     /// Свернуть все панели (Ctrl+Alt+Esc).
     HideAll,
+    /// Открыть папку-плитку с приложениями.
+    OpenFolder(usize),
     /// На рабочую область бросили файлы или ярлыки (координаты — физические px).
     Drop {
         x: i32,

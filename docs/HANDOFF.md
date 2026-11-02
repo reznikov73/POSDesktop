@@ -1,7 +1,7 @@
 # Передача проекта: POS Desktop
 
 **Дата:** 2026-11-01
-**Версия:** 0.1.21
+**Версия:** 0.1.22
 **Последний коммит:** см. `git log -1`
 **Канонический репозиторий:** `E:\Work\VSC\POSDesktop`
 **Репозиторий GitHub:** https://github.com/reznikov73/POSDesktop (ещё не создан, см. «Публикация»)
@@ -60,6 +60,7 @@ POS Desktop — оболочка рабочего стола Windows: панел
 | Запуск приложений с плитки | клик по плитке открывает ярлык из меню «Пуск» (0.1.19) |
 | Клик не двигает плитку | порог 3 px: щелчок без движения не считается перемещением (0.1.20) |
 | Плитка-папка | брошенные из Проводника ярлыки добавляются в плитку, иконки сеткой (0.1.21) |
+| Окно папки | клик по папке открывает панель с названием, сеткой приложений и закрытием (0.1.22) |
 | Трей: иконка и меню (показать/скрыть, логи, выход) | работает (0.1.12) |
 | Единственный экземпляр: повторный запуск показывает панель | работает (0.1.12) |
 | Клик-сквозь вне плиток | работает |
@@ -78,7 +79,7 @@ crates/core         layout (модель + валидация), store (layout.js
 crates/shell        trigger (edge_at), win32, tray (иконка и меню), icons (иконки), launch (ShellExecute)
 crates/ai           реестр инструментов + политика подтверждений
 crates/integrations трейт MailSource, демо-источник, soroka (чтение `soroka.db`)
-crates/ui           Slint-окна, триггер-воркер, клик-сквозь, оверлей, drag.rs, action.rs
+crates/ui           Slint-окна, триггер-воркер, клик-сквозь, оверлей, drag.rs, action.rs, окно папки
 crates/app          бинарник posdesktop: UI + CLI-флаги
 apps/d0-spike       отдельный замер триггеров
 ui/app.slint        экраны: AppWindow, StatusBar, ServicesBar, WorkspaceWindow
@@ -104,6 +105,7 @@ cargo run -p posdesktop -- --overlay     # оверлей
 .\scripts\hotkeys-check.ps1 # горячие клавиши панелей
 .\scripts\click-check.ps1  # клик по плитке запускает приложение
 .\scripts\drop-check.ps1   # ярлык из Проводника попадает в плитку
+.\scripts\folder-check.ps1 # клик по папке открывает окно с приложениями
 .\scripts\build.ps1        # fmt + clippy + tests + release + dist
 .\scripts\release.ps1      # + версия, MSI, коммит, push
 ```

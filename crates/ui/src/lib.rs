@@ -34,6 +34,10 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         work.y
     );
 
+    // Окно папки: открывается поверх рабочей области рядом с плиткой.
+    let folder = FolderWindow::new()?;
+    folder.hide()?;
+
     let apps = AppWindow::new()?;
     apps.set_win_height(work.h as f32);
 
@@ -135,6 +139,7 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         &services,
         workspace_state.clone(),
         &workspace,
+        &folder,
         panel_state.clone(),
     );
     spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
@@ -439,10 +444,39 @@ fn install_actions(
     services: &ServicesBar,
     workspace: Rc<RefCell<drag::Workspace>>,
     workspace_ui: &WorkspaceWindow,
+    folder: &FolderWindow,
     state: Arc<PanelState>,
 ) -> Option<posdesktop_shell::TrayHandle> {
     let weak = apps.as_weak();
     let workspace_weak = workspace_ui.as_weak();
+    let folder_weak = folder.as_weak();
+    let open_folder = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+
+    {
+        let folder_for_click = folder.as_weak();
+        let apps_for_click = open_folder.clone();
+        folder.on_item_clicked(move |index| {
+            let Ok(index) = usize::try_from(index) else {
+                return;
+            };
+            let app = apps_for_click.borrow().get(index).cloned();
+            if let Some(app) = app {
+                drag::launch_app(&app);
+            }
+            if let Some(window) = folder_for_click.upgrade() {
+                let _ = window.hide();
+            }
+        });
+    }
+
+    {
+        let folder_for_close = folder.as_weak();
+        folder.on_close_requested(move || {
+            if let Some(window) = folder_for_close.upgrade() {
+                let _ = window.hide();
+            }
+        });
+    }
     let status_weak = status.as_weak();
     let services_weak = services.as_weak();
     let status_visible = std::cell::Cell::new(true);
@@ -474,6 +508,37 @@ fn install_actions(
                     .borrow_mut()
                     .drop_items(&ui, x as f32 / scale, y as f32 / scale, paths);
             }
+        }
+        action::Action::OpenFolder(index) => {
+            let Some(window) = folder_weak.upgrade() else {
+                return;
+            };
+            let Some((title, items, rect)) = workspace.borrow().folder(index) else {
+                return;
+            };
+            *open_folder.borrow_mut() = workspace.borrow().folder_apps(index);
+
+            let rows = items.len().div_ceil(4).max(1) as f32;
+            let height = 28.0 + 22.0 + 12.0 + rows * 92.0 + (rows - 1.0) * 10.0;
+            window.set_content_height(height);
+            window.set_folder_title(title.clone().into());
+            window.set_items(slint::ModelRc::from(std::rc::Rc::new(
+                slint::VecModel::from(items),
+            )));
+
+            let work = posdesktop_shell::win32::primary_work_area();
+            let scale = window.window().scale_factor().max(0.5);
+            let width = (348.0 * scale) as i32;
+            let mut x = rect.right() + 8;
+            if x + width / scale as i32 > work.x + work.w {
+                x = (rect.x - 8 - width / scale as i32).max(work.x);
+            }
+            let y = rect.y.min(work.y + work.h - height as i32).max(work.y);
+            let _ = window.show();
+            window
+                .window()
+                .set_position(slint::PhysicalPosition::new(x, y));
+            log::info!("папка «{title}»: приложений {}", open_folder.borrow().len());
         }
         action::Action::Undo => {
             if let Some(ui) = workspace_weak.upgrade() {
