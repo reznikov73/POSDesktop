@@ -322,11 +322,22 @@ pub(crate) fn screen_tiles(layout: &Layout, screen_key: &str) -> Vec<Tile> {
 
 /// Плитка Slint из объекта раскладки.
 pub(crate) fn tile_of(object: &Object) -> Tile {
+    let label = object.label();
     Tile {
         x: object.rect.x as f32,
         y: object.rect.y as f32,
         w: object.rect.w as f32,
         h: object.rect.h as f32,
-        label: object.label().into(),
+        label: label.into(),
+        badge: badge_of(label).into(),
     }
+}
+
+/// Монограмма плитки: первая буква названия, пока нет иконок из Shell.
+fn badge_of(label: &str) -> String {
+    label
+        .chars()
+        .next()
+        .map(|first| first.to_uppercase().collect())
+        .unwrap_or_default()
 }

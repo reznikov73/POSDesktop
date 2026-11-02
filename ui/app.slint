@@ -13,6 +13,8 @@ export struct Tile {
     w: length,
     h: length,
     label: string,
+    // Монограмма плитки: первая буква названия, пока нет иконок из Shell.
+    badge: string,
 }
 
 export component WorkspaceWindow inherits Window {
@@ -61,12 +63,36 @@ export component WorkspaceWindow inherits Window {
         border-width: root.drag-index == idx ? 2px : 1px;
         border-color: root.drag-index == idx ? #0c7f68 : #dfe3e5;
 
-        Text {
-            text: tile.label;
-            color: #17181a;
-            font-size: 13px;
-            x: 12px;
-            y: 12px;
+        VerticalLayout {
+            padding: 10px;
+            spacing: 6px;
+            alignment: center;
+
+            Rectangle {
+                width: 34px;
+                height: 34px;
+                border-radius: 10px;
+                background: root.drag-index == idx ? #d9efe8 : #eef1f2;
+
+                Text {
+                    text: tile.badge;
+                    width: 100%;
+                    height: 100%;
+                    color: #0c7f68;
+                    font-size: 15px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            Text {
+                text: tile.label;
+                color: #17181a;
+                font-size: 12px;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
         }
 
         TouchArea {
@@ -119,78 +145,91 @@ export component AppWindow inherits Window {
         },
     ];
 
-    VerticalLayout {
-        padding: 16px;
-        spacing: 8px;
-        // Без alignment шапка растягивалась и отрывала поиск от списка.
-        alignment: start;
-
-        HorizontalLayout {
-            height: 24px;
-            spacing: 8px;
-            Text {
-                text: "ПРИЛОЖЕНИЯ";
-                color: #6d6f73;
-                font-size: 11px;
-                vertical-alignment: center;
-            }
-            Text {
-                text: "11";
-                color: #6d6f73;
-                font-size: 11px;
-                horizontal-alignment: right;
-                vertical-alignment: center;
-            }
-        }
+    // Фон панели рисуем явным прямоугольником: окно не должно просвечивать.
+    Rectangle {
+        background: #fbfcfc;
 
         Rectangle {
-            height: 36px;
-            border-radius: 8px;
-            background: #f1f4f5;
-            border-width: 1px;
-            border-color: #dfe3e5;
-
-            Text {
-                text: "Найти приложение…";
-                color: #8a8c8f;
-                font-size: 13px;
-                x: 12px;
-                height: 100%;
-                vertical-alignment: center;
-            }
+            x: parent.width - 1px;
+            width: 1px;
+            height: 100%;
+            background: #dfe3e5;
         }
 
-        for group in groups : VerticalLayout {
-            spacing: 2px;
+        VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            // Без alignment шапка растягивалась и отрывала поиск от списка.
+            alignment: start;
 
-            Text {
-                text: group.title;
-                color: #8a8c8f;
-                font-size: 10px;
+            HorizontalLayout {
                 height: 24px;
-                vertical-alignment: bottom;
+                spacing: 8px;
+                Text {
+                    text: "ПРИЛОЖЕНИЯ";
+                    color: #6d6f73;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "11";
+                    color: #6d6f73;
+                    font-size: 11px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
             }
 
-            for app in group.apps : Rectangle {
-                height: 38px;
+            Rectangle {
+                height: 36px;
                 border-radius: 8px;
-                background: touch.has-hover ? #eef1f2 : transparent;
+                background: #f1f4f5;
+                border-width: 1px;
+                border-color: #dfe3e5;
 
-                touch := TouchArea {
-                    width: 100%;
+                Text {
+                    text: "Найти приложение…";
+                    color: #8a8c8f;
+                    font-size: 13px;
+                    x: 12px;
                     height: 100%;
+                    vertical-alignment: center;
+                }
+            }
+
+            for group in groups : VerticalLayout {
+                spacing: 2px;
+
+                Text {
+                    text: group.title;
+                    color: #8a8c8f;
+                    font-size: 10px;
+                    height: 24px;
+                    vertical-alignment: bottom;
                 }
 
-                HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
-                    spacing: 8px;
+                for app in group.apps : Rectangle {
+                    height: 38px;
+                    border-radius: 8px;
+                    background: touch.has-hover ? #eef1f2 : transparent;
 
-                    Text {
-                        text: app.name;
-                        color: #17181a;
-                        font-size: 13px;
-                        vertical-alignment: center;
+                    touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 8px;
+
+                        Text {
+                            text: app.name;
+                            color: #17181a;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
                     }
                 }
             }
@@ -209,63 +248,67 @@ export component StatusBar inherits Window {
     in property <length> bar-width: 1280px;
 
     Rectangle {
-        y: parent.height - 1px;
-        height: 1px;
-        background: #e6eaea;
-    }
+        background: #fbfcfc;
 
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 18px;
-
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "ИЗБРАННОЕ";
-                color: #8a8c8f;
-                font-size: 10px;
-                vertical-alignment: center;
-            }
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: #e6eaea;
         }
 
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "Почта 12";
-                color: #17181a;
-                font-size: 12px;
-                vertical-alignment: center;
-            }
-        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 18px;
 
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "POSvpn — защищено";
-                color: #0c7f68;
-                font-size: 12px;
-                vertical-alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "ИЗБРАННОЕ";
+                    color: #8a8c8f;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
             }
-        }
 
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "Бэкап — вчера";
-                color: #565862;
-                font-size: 12px;
-                vertical-alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "Почта 12";
+                    color: #17181a;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
             }
-        }
 
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: "CI — упал";
-                color: #b3261e;
-                font-size: 12px;
-                vertical-alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "POSvpn — защищено";
+                    color: #0c7f68;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "Бэкап — вчера";
+                    color: #565862;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: "CI — упал";
+                    color: #b3261e;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
             }
         }
     }
@@ -282,43 +325,47 @@ export component ServicesBar inherits Window {
     in property <length> bar-width: 1280px;
 
     Rectangle {
-        y: 0;
-        height: 1px;
-        background: #e6eaea;
-    }
+        background: #fbfcfc;
 
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 18px;
-        alignment: center;
-
-        Text {
-            text: "СЕРВИСЫ";
-            color: #8a8c8f;
-            font-size: 10px;
-            vertical-alignment: center;
+        Rectangle {
+            y: 0;
+            height: 1px;
+            background: #e6eaea;
         }
 
-        Text {
-            text: "POSCloud — работает";
-            color: #17181a;
-            font-size: 12px;
-            vertical-alignment: center;
-        }
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 18px;
+            alignment: center;
 
-        Text {
-            text: "POSvpn — защищено";
-            color: #17181a;
-            font-size: 12px;
-            vertical-alignment: center;
-        }
+            Text {
+                text: "СЕРВИСЫ";
+                color: #8a8c8f;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
 
-        Text {
-            text: "grm-autobackup — работает";
-            color: #17181a;
-            font-size: 12px;
-            vertical-alignment: center;
+            Text {
+                text: "POSCloud — работает";
+                color: #17181a;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "POSvpn — защищено";
+                color: #17181a;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "grm-autobackup — работает";
+                color: #17181a;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
         }
     }
 }

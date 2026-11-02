@@ -200,8 +200,14 @@ pub fn run_panel_snapshot(path: &std::path::Path) -> Result<(), slint::PlatformE
         if let Some(component) = weak.upgrade() {
             match component.window().take_snapshot() {
                 Ok(buffer) => {
-                    let result =
-                        write_bmp(&path, buffer.width(), buffer.height(), buffer.as_slice());
+                    let pixels = buffer.as_slice();
+                    let clear = pixels.iter().filter(|pixel| pixel.a == 0).count();
+                    println!(
+                        "panel alpha: прозрачных {clear} из {} ({:.1}%)",
+                        pixels.len(),
+                        clear as f64 / pixels.len().max(1) as f64 * 100.0
+                    );
+                    let result = write_bmp(&path, buffer.width(), buffer.height(), pixels);
                     match result {
                         Ok(()) => println!(
                             "panel snapshot: {} ({}x{})",
