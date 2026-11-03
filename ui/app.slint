@@ -51,18 +51,6 @@ export component WorkspaceWindow inherits Window {
     // Файлы, брошенные из Проводника: пути и точка в координатах окна.
     callback files-dropped([string], length, length);
 
-    // Slint принимает броски сам (winit держит OLE drop-target),
-    // поэтому файлы ловим элементом DropArea, а не WM_DROPFILES.
-    DropArea {
-        can-drop(event) => {
-            return event.proposed-action;
-        }
-        dropped(event) => {
-            root.files-dropped(DropApi.files(event.data), event.position.x, event.position.y);
-            return event.proposed-action;
-        }
-    }
-
     // Призрак рисуется под плитками и показывает привязанную позицию.
     Rectangle {
         visible: root.ghost-visible;
@@ -154,6 +142,17 @@ export component WorkspaceWindow inherits Window {
             clicked => {
                 root.tile-clicked(idx);
             }
+        }
+    }
+
+    // Бросок из Проводника: DropArea объявлена последней, чтобы быть поверх плиток.
+    DropArea {
+        can-drop(event) => {
+            return event.proposed-action;
+        }
+        dropped(event) => {
+            root.files-dropped(DropApi.files(event.data), event.position.x, event.position.y);
+            return event.proposed-action;
         }
     }
 }

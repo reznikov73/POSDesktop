@@ -113,6 +113,7 @@ pub(crate) fn install(
                     .collect()
             })
             .unwrap_or_default();
+        log::info!("drop: путей в бросоке {}", names.len());
         slint::ModelRc::from(Rc::new(VecModel::from(names)))
     });
 
