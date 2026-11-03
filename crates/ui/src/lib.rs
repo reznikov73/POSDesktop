@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 
 mod action;
 mod drag;
+#[cfg(windows)]
+mod drop_target;
 
 slint::include_modules!();
 
@@ -107,6 +109,7 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
             if let Some(hwnd) = hwnd_of(component.window()) {
                 apply_tool_style(hwnd);
                 accept_dropped_files(hwnd);
+                drop_target::install(hwnd);
                 let rects = state_for_style
                     .borrow()
                     .physical_rects(component.window().scale_factor());
