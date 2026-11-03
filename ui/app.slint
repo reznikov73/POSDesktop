@@ -145,7 +145,7 @@ export component WorkspaceWindow inherits Window {
         }
 
         TouchArea {
-            mouse-cursor: root.drag-index == idx ? MouseCursor.grabbing : MouseCursor.grab;
+            mouse-cursor: MouseCursor.pointer;
             pointer-event(event) => {
                 if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
                     root.tile-pressed(idx);
