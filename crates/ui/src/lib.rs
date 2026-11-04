@@ -36,10 +36,6 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         work.y
     );
 
-    // Окно папки: открывается поверх рабочей области рядом с плиткой.
-    let folder = FolderWindow::new()?;
-    folder.hide()?;
-
     let apps = AppWindow::new()?;
     apps.set_win_height(work.h as f32);
 
@@ -110,10 +106,12 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
                 apply_tool_style(hwnd);
                 accept_dropped_files(hwnd);
                 drop_target::install(hwnd);
+                state_for_style.borrow_mut().set_hwnd(hwnd);
                 let rects = state_for_style
                     .borrow()
                     .physical_rects(component.window().scale_factor());
                 install_clickthrough_rects(hwnd, &rects);
+                apply_region(hwnd, &rects);
                 let rect = window_rect(hwnd);
                 log::info!(
                     "workspace: клик-сквозь вне плиток, hwnd=0x{hwnd:x}, rect=({}, {}) {}x{}",
@@ -142,7 +140,6 @@ pub fn run(overlay: bool) -> Result<(), slint::PlatformError> {
         &services,
         workspace_state.clone(),
         &workspace,
-        &folder,
         panel_state.clone(),
     );
     spawn_trigger_worker(apps.as_weak(), screen, panel_state.clone());
@@ -447,39 +444,10 @@ fn install_actions(
     services: &ServicesBar,
     workspace: Rc<RefCell<drag::Workspace>>,
     workspace_ui: &WorkspaceWindow,
-    folder: &FolderWindow,
     state: Arc<PanelState>,
 ) -> Option<posdesktop_shell::TrayHandle> {
     let weak = apps.as_weak();
     let workspace_weak = workspace_ui.as_weak();
-    let folder_weak = folder.as_weak();
-    let open_folder = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
-
-    {
-        let folder_for_click = folder.as_weak();
-        let apps_for_click = open_folder.clone();
-        folder.on_item_clicked(move |index| {
-            let Ok(index) = usize::try_from(index) else {
-                return;
-            };
-            let app = apps_for_click.borrow().get(index).cloned();
-            if let Some(app) = app {
-                drag::launch_app(&app);
-            }
-            if let Some(window) = folder_for_click.upgrade() {
-                let _ = window.hide();
-            }
-        });
-    }
-
-    {
-        let folder_for_close = folder.as_weak();
-        folder.on_close_requested(move || {
-            if let Some(window) = folder_for_close.upgrade() {
-                let _ = window.hide();
-            }
-        });
-    }
     let status_weak = status.as_weak();
     let services_weak = services.as_weak();
     let status_visible = std::cell::Cell::new(true);
@@ -511,37 +479,6 @@ fn install_actions(
                     .borrow_mut()
                     .drop_items(&ui, x as f32 / scale, y as f32 / scale, paths);
             }
-        }
-        action::Action::OpenFolder(index) => {
-            let Some(window) = folder_weak.upgrade() else {
-                return;
-            };
-            let Some((title, items, rect)) = workspace.borrow().folder(index) else {
-                return;
-            };
-            *open_folder.borrow_mut() = workspace.borrow().folder_apps(index);
-
-            let rows = items.len().div_ceil(4).max(1) as f32;
-            let height = 28.0 + 22.0 + 12.0 + rows * 92.0 + (rows - 1.0) * 10.0;
-            window.set_content_height(height);
-            window.set_folder_title(title.clone().into());
-            window.set_items(slint::ModelRc::from(std::rc::Rc::new(
-                slint::VecModel::from(items),
-            )));
-
-            let work = posdesktop_shell::win32::primary_work_area();
-            let scale = window.window().scale_factor().max(0.5);
-            let width = (348.0 * scale) as i32;
-            let mut x = rect.right() + 8;
-            if x + width / scale as i32 > work.x + work.w {
-                x = (rect.x - 8 - width / scale as i32).max(work.x);
-            }
-            let y = rect.y.min(work.y + work.h - height as i32).max(work.y);
-            let _ = window.show();
-            window
-                .window()
-                .set_position(slint::PhysicalPosition::new(x, y));
-            log::info!("папка «{title}»: приложений {}", open_folder.borrow().len());
         }
         action::Action::Undo => {
             if let Some(ui) = workspace_weak.upgrade() {
@@ -894,6 +831,37 @@ fn apply_overlay_style(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_overlay_style(_window: &slint::Window) {}
 
+/// Ставит окну регион из прямоугольников: вне плиток окна физически нет,
+/// поэтому клики и броски рядом с плитками достаются рабочему столу.
+#[cfg(windows)]
+pub(crate) fn apply_region(hwnd: isize, rects: &[(i32, i32, i32, i32)]) {
+    unsafe {
+        let region = CreateRectRgn(0, 0, 0, 0);
+        if region == 0 {
+            return;
+        }
+        let mut any = false;
+        for (x, y, w, h) in rects {
+            let part = CreateRectRgn(*x, *y, x + w, y + h);
+            if part != 0 {
+                CombineRgn(region, region, part, RGN_OR);
+                DeleteObject(part);
+                any = true;
+            }
+        }
+        if !any {
+            DeleteObject(region);
+            return;
+        }
+        if SetWindowRgn(hwnd, region, 1) == 0 {
+            DeleteObject(region);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn apply_region(_hwnd: isize, _rects: &[(i32, i32, i32, i32)]) {}
+
 /// Убирает окно панели с панели задач и из Alt+Tab.
 fn hide_from_taskbar<T: slint::ComponentHandle + 'static>(weak: &slint::Weak<T>) {
     if let Some(window) = weak.upgrade() {
@@ -1103,6 +1071,8 @@ const HWND_TOPMOST: isize = -1;
 #[cfg(windows)]
 const WM_DROPFILES: u32 = 0x0233;
 #[cfg(windows)]
+const RGN_OR: i32 = 2;
+#[cfg(windows)]
 const SW_HIDE: i32 = 0;
 #[cfg(windows)]
 const SW_SHOWNOACTIVATE: i32 = 4;
@@ -1132,6 +1102,10 @@ extern "system" {
     fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
     fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
     fn DragAcceptFiles(hwnd: isize, accept: i32);
+    fn CreateRectRgn(left: i32, top: i32, right: i32, bottom: i32) -> isize;
+    fn CombineRgn(dst: isize, first: isize, second: isize, mode: i32) -> i32;
+    fn SetWindowRgn(hwnd: isize, region: isize, redraw: i32) -> i32;
+    fn DeleteObject(object: isize) -> i32;
     fn DragQueryFileW(hdrop: isize, index: u32, buffer: *mut u16, size: u32) -> u32;
     fn DragFinish(hdrop: isize);
     fn RegisterHotKey(hwnd: isize, id: i32, modifiers: u32, vk: u32) -> i32;

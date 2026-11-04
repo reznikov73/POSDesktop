@@ -3436,7 +3436,7 @@ dependencies = [
 
 [[package]]
 name = "posdesktop"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "log",
  "posdesktop-ai",
@@ -3447,11 +3447,11 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-ai"
-version = "0.1.26"
+version = "0.1.27"
 
 [[package]]
 name = "posdesktop-core"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "chrono",
  "log",
@@ -3462,18 +3462,18 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-d0-spike"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "posdesktop-shell",
 ]
 
 [[package]]
 name = "posdesktop-integrations"
-version = "0.1.26"
+version = "0.1.27"
 
 [[package]]
 name = "posdesktop-shell"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "log",
  "posdesktop-core",
@@ -3481,7 +3481,7 @@ dependencies = [
 
 [[package]]
 name = "posdesktop-ui"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "log",
  "posdesktop-core",

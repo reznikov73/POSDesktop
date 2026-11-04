@@ -13,7 +13,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::action::{self, Action};
 use crate::{Tile, WorkspaceWindow};
 
 /// Период опроса курсора во время перетаскивания — кадр 60 Гц (ТЗ §12, N7).
@@ -37,6 +36,10 @@ pub(crate) struct Workspace {
     drag: Option<Drag>,
     /// Когда закончилось последнее перетаскивание — чтобы клик после него не запускал приложение.
     drag_ended: Option<std::time::Instant>,
+    /// Открытая папка: индекс плитки и её прямоугольник.
+    folder: Option<(usize, Rect)>,
+    /// HWND рабочей области — для региона окна.
+    hwnd: Option<isize>,
     /// Откат и повтор перемещений (ТЗ §6.3).
     history: History,
     /// Таймер кадров; в покое тикает редко.
@@ -79,6 +82,8 @@ pub(crate) fn install(
         model,
         drag: None,
         drag_ended: None,
+        folder: None,
+        hwnd: None,
         history: History::default(),
         timer: Timer::default(),
     }));
@@ -129,10 +134,27 @@ pub(crate) fn install(
         }
     });
 
+    let item_state = Rc::downgrade(&state);
+    let item_ui = ui.as_weak();
+    ui.on_folder_item_clicked(move |index| {
+        if let (Some(state), Some(ui)) = (item_state.upgrade(), item_ui.upgrade()) {
+            state.borrow_mut().launch_folder_item(&ui, index);
+        }
+    });
+
+    let close_state = Rc::downgrade(&state);
+    let close_ui = ui.as_weak();
+    ui.on_folder_close_requested(move || {
+        if let (Some(state), Some(ui)) = (close_state.upgrade(), close_ui.upgrade()) {
+            state.borrow_mut().close_folder(&ui);
+        }
+    });
+
     let click_state = Rc::downgrade(&state);
+    let click_ui = ui.as_weak();
     ui.on_tile_clicked(move |index| {
-        if let Some(state) = click_state.upgrade() {
-            state.borrow().activate(index);
+        if let (Some(state), Some(ui)) = (click_state.upgrade(), click_ui.upgrade()) {
+            state.borrow_mut().activate(&ui, index);
         }
     });
 
@@ -159,11 +181,13 @@ impl Workspace {
         let Some(screen) = self.layout.monitors.get(&self.screen_key) else {
             return Vec::new();
         };
-        screen
-            .objects
-            .iter()
-            .map(|object| {
-                let rect = object.rect;
+        let mut rects: Vec<Rect> = screen.objects.iter().map(|object| object.rect).collect();
+        if let Some((_, rect)) = self.folder {
+            rects.push(rect);
+        }
+        rects
+            .into_iter()
+            .map(|rect| {
                 (
                     (rect.x as f32 * scale).round() as i32,
                     (rect.y as f32 * scale).round() as i32,
@@ -231,7 +255,7 @@ impl Workspace {
     ///
     /// Сразу после перетаскивания клик игнорируется — иначе отпускание плитки
     /// запускало бы приложение.
-    pub(crate) fn activate(&self, index: i32) {
+    pub(crate) fn activate(&mut self, ui: &WorkspaceWindow, index: i32) {
         // Slint присылает clicked раньше, чем кадр finish завершает перетаскивание,
         // поэтому смотрим, сдвинулся ли курсор с момента нажатия.
         if let Some(drag) = self.drag.as_ref() {
@@ -262,7 +286,7 @@ impl Workspace {
         };
 
         if !object.apps.is_empty() {
-            action::dispatch(Action::OpenFolder(index));
+            self.toggle_folder(ui, index);
             return;
         }
         if let Some(app) = &object.app {
@@ -270,6 +294,89 @@ impl Workspace {
         } else if let Some(widget) = &object.widget {
             log::info!("виджет {widget}: действия пока нет");
         }
+    }
+
+    /// Раскрывает папку на месте плитки или закрывает, если она уже открыта.
+    pub(crate) fn toggle_folder(&mut self, ui: &WorkspaceWindow, index: usize) {
+        if matches!(self.folder, Some((open, _)) if open == index) {
+            self.close_folder(ui);
+        } else {
+            self.open_folder(ui, index);
+        }
+    }
+
+    /// Раскрывает папку сеткой 4 колонки: иконки переносятся по строкам.
+    pub(crate) fn open_folder(&mut self, ui: &WorkspaceWindow, index: usize) {
+        let Some((_, items, rect)) = self.folder(index) else {
+            return;
+        };
+        let count = items.len().max(1) as i32;
+        let columns = count.min(4);
+        let rows = (count + 3) / 4;
+        let width = columns * 88 + 16;
+        let height = 40 + rows * 88 + 8;
+
+        let work = posdesktop_shell::win32::primary_work_area();
+        let x = rect.x.min(work.x + work.w - width).max(work.x);
+        let y = rect.y.min(work.y + work.h - height).max(work.y);
+
+        ui.set_folder_x(x as f32);
+        ui.set_folder_y(y as f32);
+        ui.set_folder_w(width as f32);
+        ui.set_folder_h(height as f32);
+        ui.set_folder_items(slint::ModelRc::from(std::rc::Rc::new(
+            slint::VecModel::from(items),
+        )));
+        ui.set_open_folder(index as i32);
+        self.folder = Some((
+            index,
+            Rect {
+                x,
+                y,
+                w: width,
+                h: height,
+            },
+        ));
+        self.grow_window(ui, x + width + WINDOW_MARGIN, y + height + WINDOW_MARGIN);
+        self.refresh(ui);
+        log::info!("папка раскрыта: {count} приложений, {columns}×{rows}");
+    }
+
+    /// Закрывает раскрытую папку.
+    pub(crate) fn close_folder(&mut self, ui: &WorkspaceWindow) {
+        if self.folder.take().is_some() {
+            ui.set_open_folder(-1);
+            self.refresh(ui);
+            log::info!("папка закрыта");
+        }
+    }
+
+    /// Запускает приложение из раскрытой папки.
+    fn launch_folder_item(&mut self, ui: &WorkspaceWindow, index: i32) {
+        let Some((folder_index, _)) = self.folder else {
+            return;
+        };
+        let Ok(index) = usize::try_from(index) else {
+            return;
+        };
+        if let Some(app) = self.folder_apps(folder_index).get(index) {
+            launch_app(app);
+        }
+        self.close_folder(ui);
+    }
+
+    /// Увеличивает окно, если содержимое выходит за габариты.
+    fn grow_window(&self, ui: &WorkspaceWindow, width: i32, height: i32) {
+        let (current, current_height) = self.window_size();
+        if width > current || height > current_height {
+            ui.set_ws_width(width.max(current) as f32);
+            ui.set_ws_height(height.max(current_height) as f32);
+        }
+    }
+
+    /// Запоминает HWND рабочей области.
+    pub(crate) fn set_hwnd(&mut self, hwnd: isize) {
+        self.hwnd = Some(hwnd);
     }
 
     /// Заголовок и содержимое папки-плитки.
@@ -339,7 +446,11 @@ impl Workspace {
         let (width, height) = self.window_size();
         ui.set_ws_width(width as f32);
         ui.set_ws_height(height as f32);
-        crate::update_pass_rects(&self.physical_rects(ui.window().scale_factor()));
+        let rects = self.physical_rects(ui.window().scale_factor());
+        crate::update_pass_rects(&rects);
+        if let Some(hwnd) = self.hwnd {
+            crate::apply_region(hwnd, &rects);
+        }
     }
 }
 

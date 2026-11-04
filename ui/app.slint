@@ -26,6 +26,13 @@ export struct Tile {
     icons: [image],
 }
 
+export struct FolderItem {
+    label: string,
+    icon: image,
+    has-icon: bool,
+    badge: string,
+}
+
 export component WorkspaceWindow inherits Window {
     title: "POS Desktop — рабочая область";
     no-frame: true;
@@ -50,6 +57,15 @@ export component WorkspaceWindow inherits Window {
     callback tile-clicked(int);
     // Файлы, брошенные из Проводника: пути и точка в координатах окна.
     callback files-dropped([string], length, length);
+    // Открытая папка: индекс плитки и её содержимое (рисуется поверх плиток).
+    in property <int> open-folder: -1;
+    in property <length> folder-x: 0px;
+    in property <length> folder-y: 0px;
+    in property <length> folder-w: 0px;
+    in property <length> folder-h: 0px;
+    in property <[FolderItem]> folder-items: [];
+    callback folder-item-clicked(int);
+    callback folder-close-requested();
 
     // Призрак рисуется под плитками и показывает привязанную позицию.
     Rectangle {
@@ -145,6 +161,102 @@ export component WorkspaceWindow inherits Window {
         }
     }
 
+    // Раскрытая папка: та же плитка, но крупнее и с сеткой иконок.
+    if (root.open-folder >= 0) : Rectangle {
+        x: root.folder-x;
+        y: root.folder-y;
+        width: root.folder-w;
+        height: root.folder-h;
+        border-radius: 18px;
+        background: #fbfcfc;
+        border-width: 1px;
+        border-color: #dfe3e5;
+
+        // Крестик закрытия.
+        Rectangle {
+            x: parent.width - 34px;
+            y: 8px;
+            width: 26px;
+            height: 26px;
+            border-radius: 13px;
+            background: close-area.has-hover ? #eef1f2 : transparent;
+
+            close-area := TouchArea {
+                clicked => {
+                    root.folder-close-requested();
+                }
+            }
+
+            Text {
+                text: "×";
+                width: 100%;
+                height: 100%;
+                color: #565862;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        for item[idx] in root.folder-items : Rectangle {
+            x: 8px + Math.mod(idx, 4) * 88px;
+            y: 40px + Math.floor(idx / 4) * 88px;
+            width: 88px;
+            height: 84px;
+            border-radius: 12px;
+            background: folder-touch.has-hover ? #eef1f2 : transparent;
+
+            folder-touch := TouchArea {
+                clicked => {
+                    root.folder-item-clicked(idx);
+                }
+            }
+
+            Image {
+                visible: item.has-icon;
+                source: item.icon;
+                x: (parent.width - 40px) / 2;
+                y: 8px;
+                width: 40px;
+                height: 40px;
+                image-fit: contain;
+            }
+
+            Rectangle {
+                visible: !item.has-icon;
+                x: (parent.width - 40px) / 2;
+                y: 8px;
+                width: 40px;
+                height: 40px;
+                border-radius: 12px;
+                background: #eef1f2;
+
+                Text {
+                    text: item.badge;
+                    width: 100%;
+                    height: 100%;
+                    color: #0c7f68;
+                    font-size: 16px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            Text {
+                text: item.label;
+                x: 4px;
+                y: 52px;
+                width: parent.width - 8px;
+                height: 28px;
+                color: #17181a;
+                font-size: 11px;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+
     // Бросок из Проводника: DropArea объявлена последней, чтобы быть поверх плиток.
     DropArea {
         can-drop(event) => {
@@ -155,13 +267,6 @@ export component WorkspaceWindow inherits Window {
             return event.proposed-action;
         }
     }
-}
-
-export struct FolderItem {
-    label: string,
-    icon: image,
-    has-icon: bool,
-    badge: string,
 }
 
 export component FolderWindow inherits Window {

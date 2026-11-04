@@ -1,24 +1,21 @@
-# Проверка окна папки: клик по плитке-папке открывает панель с приложениями.
+# Проверка раскрытия папки на месте плитки: клик раскрывает, повторный — закрывает.
 [CmdletBinding()]
 param(
-    [string]$Exe = 'E:\Work\VSC\POSDesktop\target\release\posdesktop.exe',
-    [string]$Shot = 'C:\Users\rez\AppData\Roaming\AutoClaw-oversea-official\accounts\a13284e151c1988d16d8ec021c6ff7e5d5f84db13f785b1d6897e218f89a4874\projects\Новый проект\shots\folder-window.png'
+    [string]$Exe = 'E:\Work\VSC\POSDesktop\target\release\posdesktop.exe'
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public class FolderCheck {
+public class FolderTest {
     public delegate bool Proc(IntPtr h, IntPtr p);
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool EnumWindows(Proc cb, IntPtr p);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -35,6 +32,15 @@ public class FolderCheck {
         }, IntPtr.Zero);
         return found;
     }
+
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(200);
+        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(90);
+        mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(700);
+    }
 }
 '@
 
@@ -43,8 +49,8 @@ New-Item -ItemType Directory -Force (Join-Path $root 'POSDesktop') | Out-Null
 $layout = Join-Path $root 'POSDesktop\layout.json'
 $failures = 0
 
-$excel = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Excel.lnk'
 $word = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Word.lnk'
+$excel = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Excel.lnk'
 
 $json = & $Exe --layout 2>$null | Out-String
 $data = $json | ConvertFrom-Json
@@ -64,42 +70,43 @@ $proc = Start-Process -FilePath $Exe -PassThru -WindowStyle Hidden
 $env:APPDATA = $saved
 Start-Sleep -Seconds 3
 
-$workspace = [FolderCheck]::Find([uint32]$proc.Id, 'POS Desktop — рабочая область')
+$exeRoot = Split-Path -Parent $Exe
+for ($i = 0; $i -lt 6; $i++) {
+    if (Test-Path -LiteralPath (Join-Path $exeRoot 'Cargo.toml')) { break }
+    $parent = Split-Path -Parent $exeRoot
+    if (-not $parent) { break }
+    $exeRoot = $parent
+}
+$log = Join-Path $exeRoot 'logs\app.log'
+
+$workspace = [FolderTest]::Find([uint32]$proc.Id, 'POS Desktop — рабочая область')
 if ($workspace -eq [IntPtr]::Zero) { throw 'окно рабочей области не найдено' }
-[void][FolderCheck]::SetWindowPos($workspace, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010)
+[void][FolderTest]::SetWindowPos($workspace, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010)
 Start-Sleep -Milliseconds 400
 
-$x = [int]($tile.x + $tile.w / 2)
-$y = [int]($tile.y + $tile.h / 2)
-[void][FolderCheck]::SetCursorPos($x, $y)
-Start-Sleep -Milliseconds 200
-[FolderCheck]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 120
-[FolderCheck]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
-Start-Sleep -Milliseconds 1200
+$x = [int]($tile.x + 44)
+$y = [int]($tile.y + 44)
+"клик по папке в ($x,$y)"
+[FolderTest]::Click($x, $y)
 
-$folder = [FolderCheck]::Find([uint32]$proc.Id, 'POS Desktop — папка')
-"окно папки: $folder, видимо: $([FolderCheck]::IsWindowVisible($folder))"
-if ($folder -eq [IntPtr]::Zero -or -not [FolderCheck]::IsWindowVisible($folder)) {
-    'ОШИБКА: окно папки не открылось'
-    $failures++
+$tail = Get-Content -LiteralPath $log -Tail 15 -Encoding UTF8
+if ($tail | Select-String 'папка раскрыта') {
+    'папка раскрылась на месте плитки'
 } else {
-    $rect = New-Object FolderCheck+RECT
-    [void][FolderCheck]::GetWindowRect($folder, [ref]$rect)
-    "папка: ($($rect.Left),$($rect.Top)) $($rect.Right - $rect.Left)x$($rect.Bottom - $rect.Top)"
-    [void][FolderCheck]::SetWindowPos($folder, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0010)
-    Start-Sleep -Milliseconds 400
-    $bmp = New-Object System.Drawing.Bitmap ($rect.Right - $rect.Left), ($rect.Bottom - $rect.Top)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bmp.Size)
-    $g.Dispose()
-    $bmp.Save($Shot, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp.Dispose()
-    "снимок: $Shot"
+    'ОШИБКА: в логе нет строки о раскрытии'
+    $failures++
+}
+
+[FolderTest]::Click($x, $y)
+if ((Get-Content -LiteralPath $log -Tail 15 -Encoding UTF8) | Select-String 'папка закрыта') {
+    'повторный клик закрыл папку'
+} else {
+    'ОШИБКА: папка не закрылась'
+    $failures++
 }
 
 Stop-Process -Id $proc.Id -Force
 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 
-if ($failures -gt 0) { throw 'проверка окна папки провалена' }
-'OK: папка открывается окном с приложениями'
+if ($failures -gt 0) { throw "проверка папки провалена: ошибок $failures" }
+'OK: папка раскрывается на месте плитки и закрывается'
